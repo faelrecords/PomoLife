@@ -44,6 +44,20 @@ describe("agent storage", () => {
     expect(loadAgentState().preferences.selectedModelId).toBe("Qwen3-1.7B-q4f16_1-MLC");
   });
 
+  it("preserva anexos textuais seguros nas mensagens", () => {
+    const state = loadAgentState();
+    const session = createChatSession("2026-07-14T12:00:00.000Z");
+    session.messages = [{
+      id: "with-file",
+      role: "user",
+      content: "Analise este arquivo",
+      createdAt: session.createdAt,
+      attachments: [{ id: "file-1", name: "brief.md", mimeType: "text/markdown", size: 18, text: "Conteúdo do briefing", truncated: false }],
+    }];
+    saveAgentState({ ...state, sessions: [session], activeSessionId: session.id });
+    expect(loadAgentState().sessions[0]?.messages[0]?.attachments?.[0]).toMatchObject({ name: "brief.md", text: "Conteúdo do briefing" });
+  });
+
   it("apaga o estado novo e os dados legados juntos", () => {
     localStorage.setItem(AGENT_STORAGE_KEY, "{}");
     localStorage.setItem(LEGACY_STORAGE_KEY, "{}");

@@ -59,6 +59,23 @@ test("restaura conversas após recarregar", async ({ page }) => {
   await expect(page.getByText(/qual entrega concreta/i)).toBeVisible();
 });
 
+test("anexa texto localmente e preserva o arquivo na conversa", async ({ page }) => {
+  await page.goto("./");
+  await page.getByLabel("Selecionar arquivos de texto").setInputFiles({
+    name: "briefing.md",
+    mimeType: "text/markdown",
+    buffer: Buffer.from("Prazo: sexta-feira\nEntrega: relatório final"),
+  });
+  await expect(page.getByRole("button", { name: "Visualizar arquivo briefing.md" })).toBeVisible();
+  await page.getByRole("button", { name: "Enviar" }).click();
+  const consent = page.getByRole("dialog", { name: "Baixar a IA local?" });
+  await consent.getByRole("button", { name: "Continuar no modo básico" }).click();
+  await expect(page.locator(".user-message-copy", { hasText: "Analise os arquivos anexados." })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Visualizar arquivo briefing.md" })).toBeVisible();
+  expect(await page.evaluate(() => localStorage.getItem("pomolife:agent-state"))).toContain("Prazo: sexta-feira");
+});
+
 test("inicia e restaura um Pomodoro com horário absoluto", async ({ page }) => {
   await page.goto("./");
   await sendBasic(page, "Finalizar apresentação");

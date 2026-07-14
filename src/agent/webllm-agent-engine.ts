@@ -8,8 +8,8 @@ function coordinatorDefinition(prompt: string): PromptDefinition {
   return {
     id: "paralysis",
     number: "01",
-    slug: "coordenador",
-    title: "Coordenador PomoLife",
+    slug: "assistente",
+    title: "Assistente PomoLife",
     description: "",
     fields: [],
     generation: { temperature: 0.12, maxTokens: 420 },

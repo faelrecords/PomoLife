@@ -1,4 +1,5 @@
 import type { PlannerEngineSnapshot } from "../engine";
+import { determineTurnMode } from "./context";
 import type { AgentEngine, AgentGenerationOptions, AgentGenerationResult, AgentRequest } from "./types";
 
 const READY: PlannerEngineSnapshot = { status: "ready", progress: null, error: null };
@@ -14,7 +15,17 @@ function firstUserText(request: AgentRequest): string {
 function basicResponse(request: AgentRequest): string {
   const userMessages = request.messages.filter((message) => message.role === "user");
   const task = firstUserText(request).replace(/\s+/g, " ").slice(0, 240);
-  if (userMessages.length <= 1) {
+  const turnMode = determineTurnMode(request.messages);
+  if (turnMode === "general") {
+    if (/^\s*(?:oi|olá|ola|bom dia|boa tarde|boa noite)[!.?\s]*$/i.test(latestUserText(request))) {
+      return "Olá! Posso conversar sobre qualquer assunto. Para respostas geradas por IA, ative um dos modelos locais; o Plano básico continua disponível para organizar tarefas sem usar um modelo.";
+    }
+    return "O Plano básico consegue organizar tarefas, prioridades e blocos de foco, mas não gera com segurança respostas para assuntos gerais. Ative um modelo local para usar o PomoLife como chat de IA nesta conversa.";
+  }
+  if (turnMode === "clarify") {
+    return "Eu estava tentando identificar o resultado que você quer alcançar. Se preferir, diga apenas qual é a próxima coisa que precisa ficar pronta.";
+  }
+  if (turnMode === "briefing" || (turnMode === "productivity" && userMessages.length <= 1)) {
     return `[[BRIEFING]]Entendi que você quer avançar em: **${task}**. Para não montar um plano genérico:\n\n1. Qual entrega concreta precisa existir no final e em que quantidade?\n2. Quais materiais ou informações já existem e quais ainda precisam ser encontrados?\n3. Qual é o prazo e existe algum padrão ou restrição obrigatória?`;
   }
   const details = latestUserText(request).replace(/\s+/g, " ").slice(0, 300);

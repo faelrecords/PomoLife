@@ -1,9 +1,10 @@
-import type { AgentMode, ChatMessage, ChatSession, ChecklistItem } from "../agent";
+import type { AgentMode, ChatAttachment, ChatMessage, ChatSession, ChecklistItem } from "../agent";
 import type { PlanRecord } from "../domain";
 import { createId, createIsoNow } from "./ids";
 import { isPomodoroSession, type PomodoroSession } from "./pomodoro";
 import { DEFAULT_YOUTUBE_URL, LEGACY_DEFAULT_YOUTUBE_URL } from "./youtube";
 import { DEFAULT_LOCAL_MODEL_ID, isLocalModelId, type LocalModelId } from "./modelCatalog";
+import { MAX_ATTACHMENT_BYTES, MAX_ATTACHMENT_CHARACTERS, MAX_CHAT_ATTACHMENTS, MAX_TOTAL_ATTACHMENT_CHARACTERS } from "./chatAttachments";
 
 export const AGENT_STORAGE_KEY = "pomolife:agent-state";
 export const LEGACY_STORAGE_KEY = "pomolife:state";
@@ -74,6 +75,38 @@ function emptyState(storageValue = storage()): AgentPersistedState {
   };
 }
 
+function sanitizeAttachment(value: unknown, characterLimit = MAX_ATTACHMENT_CHARACTERS): ChatAttachment | null {
+  if (!isObject(value)
+    || typeof value.id !== "string"
+    || typeof value.name !== "string"
+    || typeof value.mimeType !== "string"
+    || typeof value.size !== "number"
+    || typeof value.text !== "string") return null;
+  const textLimit = Math.max(0, Math.min(MAX_ATTACHMENT_CHARACTERS, characterLimit));
+  return {
+    id: value.id,
+    name: value.name.slice(0, 180),
+    mimeType: value.mimeType.slice(0, 100),
+    size: Math.max(0, Math.min(MAX_ATTACHMENT_BYTES, value.size)),
+    text: value.text.slice(0, textLimit),
+    truncated: value.truncated === true || value.text.length > textLimit,
+  };
+}
+
+function sanitizeAttachments(value: unknown): ChatAttachment[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const result: ChatAttachment[] = [];
+  let remainingCharacters = MAX_TOTAL_ATTACHMENT_CHARACTERS;
+  for (const candidate of value.slice(0, MAX_CHAT_ATTACHMENTS)) {
+    if (remainingCharacters <= 0) break;
+    const attachment = sanitizeAttachment(candidate, remainingCharacters);
+    if (!attachment) continue;
+    result.push(attachment);
+    remainingCharacters -= attachment.text.length;
+  }
+  return result.length ? result : undefined;
+}
+
 function sanitizeMessage(value: unknown): ChatMessage | null {
   if (!isObject(value) || typeof value.id !== "string" || (value.role !== "user" && value.role !== "assistant") || typeof value.content !== "string" || typeof value.createdAt !== "string") return null;
   return {
@@ -83,6 +116,7 @@ function sanitizeMessage(value: unknown): ChatMessage | null {
     createdAt: value.createdAt,
     mode: value.mode === "ai" || value.mode === "basic" ? value.mode : undefined,
     stage: value.stage === "briefing" || value.stage === "plan" || value.stage === "message" ? value.stage : undefined,
+    attachments: sanitizeAttachments(value.attachments),
   };
 }
 

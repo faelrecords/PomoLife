@@ -12,13 +12,14 @@ import {
   Check,
   Copy,
   Download,
+  FileText,
   History,
   MessageSquarePlus,
   Orbit,
+  Paperclip,
   Play,
   Send,
   Settings,
-  Sparkles,
   Square,
   Trash2,
   UserRound,
@@ -31,6 +32,7 @@ import {
   parseAgentOutput,
   parseChecklist,
   type AgentEngine,
+  type ChatAttachment,
   type ChatMessage,
   type ChatSession,
   type PomodoroPreset,
@@ -50,6 +52,7 @@ import {
 } from "./lib/chatStorage";
 import { createId, createIsoNow } from "./lib/ids";
 import { getLocalModel, isLocalModelId, LOCAL_MODELS } from "./lib/modelCatalog";
+import { CHAT_ATTACHMENT_ACCEPT, formatAttachmentSize, readChatAttachments } from "./lib/chatAttachments";
 import { createPomodoroSession, POMODORO_PRESETS, type PomodoroSession } from "./lib/pomodoro";
 import { BlackHoleBackdrop } from "./components/BlackHoleBackdrop";
 import { InteractiveMessage } from "./components/InteractiveMessage";
@@ -72,7 +75,7 @@ function emptyGreeting(): ChatMessage {
   return {
     id: "welcome",
     role: "assistant",
-    content: "Conte o que está ocupando sua cabeça ou qual entrega precisa sair. Se faltar contexto, eu faço um briefing curto antes de quebrar tudo em passos pequenos.",
+    content: "Olá! Posso conversar sobre qualquer assunto, analisar arquivos de texto ou ajudar a transformar tarefas em passos menores quando isso for útil.",
     createdAt: createIsoNow(),
     stage: "message",
   };
@@ -91,6 +94,11 @@ export default function App() {
   const [legacyPlans, setLegacyPlans] = useState(initial.legacyPlans);
   const [pomodoro, setPomodoro] = useState<PomodoroSession | null>(initial.pomodoro);
   const [composer, setComposer] = useState("");
+  const [composerAttachments, setComposerAttachments] = useState<ChatAttachment[]>([]);
+  const [pendingAttachments, setPendingAttachments] = useState<ChatAttachment[]>([]);
+  const [previewAttachment, setPreviewAttachment] = useState<ChatAttachment | null>(null);
+  const [attachmentError, setAttachmentError] = useState("");
+  const [attachmentBusy, setAttachmentBusy] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [consentOpen, setConsentOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -101,6 +109,7 @@ export default function App() {
   const [cacheBusy, setCacheBusy] = useState(false);
   const [toast, setToast] = useState("");
   const abortRef = useRef<AbortController | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const sessionsRef = useRef(sessions);
   const endRef = useRef<HTMLDivElement>(null);
 
@@ -109,6 +118,14 @@ export default function App() {
   const busy = isGenerating || aiSnapshot.status === "downloading" || aiSnapshot.status === "loading";
 
   useEffect(() => { sessionsRef.current = sessions; }, [sessions]);
+  useEffect(() => {
+    setComposer("");
+    setComposerAttachments([]);
+    setPendingText("");
+    setPendingAttachments([]);
+    setAttachmentError("");
+    setConsentOpen(false);
+  }, [activeSessionId]);
   useEffect(() => {
     saveAgentState({ version: AGENT_STORAGE_VERSION, sessions, activeSessionId, legacyPlans, preferences, pomodoro });
   }, [activeSessionId, legacyPlans, pomodoro, preferences, sessions]);
@@ -138,19 +155,33 @@ export default function App() {
     setSessions((current) => [session, ...current].slice(0, 20));
     setActiveSessionId(session.id);
     setComposer("");
+    setComposerAttachments([]);
+    setAttachmentError("");
   };
 
-  const sendThroughEngine = useCallback(async (text: string, engine: AgentEngine) => {
+  const sendThroughEngine = useCallback(async (text: string, engine: AgentEngine, attachments: readonly ChatAttachment[] = []) => {
     const session = sessionsRef.current.find((item) => item.id === activeSessionId);
     if (!session || isGenerating) return;
     const now = createIsoNow();
-    const userMessage: ChatMessage = { id: createId("message"), role: "user", content: text.trim(), createdAt: now };
+    const messageText = text.trim() || "Analise os arquivos anexados.";
+    const userMessage: ChatMessage = {
+      id: createId("message"),
+      role: "user",
+      content: messageText,
+      createdAt: now,
+      attachments: attachments.length ? [...attachments] : undefined,
+    };
     const assistantId = createId("message");
     const assistantPlaceholder: ChatMessage = { id: assistantId, role: "assistant", content: "", createdAt: now, mode: engine.mode };
     const requestMessages = [...session.messages, userMessage];
-    const nextTitle = session.messages.some((message) => message.role === "user") ? session.title : sessionTitleFrom(text);
+    const titleSource = text.trim() || attachments.map((attachment) => attachment.name).join(", ");
+    const nextTitle = session.messages.some((message) => message.role === "user") ? session.title : sessionTitleFrom(titleSource);
     setSessions((current) => updateSessionList(current, session.id, (item) => ({ ...item, title: nextTitle, messages: [...item.messages, userMessage, assistantPlaceholder].slice(-50), updatedAt: now })));
     setComposer("");
+    setComposerAttachments([]);
+    setPendingText("");
+    setPendingAttachments([]);
+    setAttachmentError("");
     setIsGenerating(true);
     const controller = new AbortController();
     abortRef.current = controller;
@@ -189,16 +220,18 @@ export default function App() {
     }
   }, [activeSessionId, isGenerating]);
 
-  const prepareAIAndSend = async (text: string) => {
+  const prepareAIAndSend = async (text: string, attachments: readonly ChatAttachment[] = pendingAttachments) => {
     try {
       await aiEngine.initialize();
       setModelCached(true);
       patchPreferences({ preferredMode: "ai" });
       setConsentOpen(false);
       setPendingText("");
-      await sendThroughEngine(text, aiEngine);
+      setPendingAttachments([]);
+      await sendThroughEngine(text, aiEngine, attachments);
     } catch {
       setPendingText(text);
+      setPendingAttachments([...attachments]);
       setConsentOpen(true);
       setToast("A IA local não pôde ser carregada. O modo básico continua disponível.");
     }
@@ -207,31 +240,35 @@ export default function App() {
   const requestSend = (event?: FormEvent) => {
     event?.preventDefault();
     const text = composer.trim();
-    if (!text || busy) return;
-    if (preferences.preferredMode === "basic" && (aiSnapshot.status === "error" || aiSnapshot.status === "unsupported")) { void sendThroughEngine(text, basicEngine); return; }
-    if (aiSnapshot.status === "ready") { void sendThroughEngine(text, aiEngine); return; }
+    const attachments = [...composerAttachments];
+    if ((!text && !attachments.length) || busy || attachmentBusy) return;
+    if (preferences.preferredMode === "basic" && (aiSnapshot.status === "error" || aiSnapshot.status === "unsupported")) { void sendThroughEngine(text, basicEngine, attachments); return; }
+    if (aiSnapshot.status === "ready") { void sendThroughEngine(text, aiEngine, attachments); return; }
     setPendingText(text);
+    setPendingAttachments(attachments);
     if (aiSnapshot.status === "unsupported" || aiSnapshot.status === "error") { setConsentOpen(true); return; }
-    if (modelCached === true) { void prepareAIAndSend(text); return; }
+    if (modelCached === true) { void prepareAIAndSend(text, attachments); return; }
     if (modelCached === false) { setConsentOpen(true); return; }
     void aiEngine.hasModelInCache().then((cached) => {
       setModelCached(cached);
-      if (cached) void prepareAIAndSend(text);
+      if (cached) void prepareAIAndSend(text, attachments);
       else setConsentOpen(true);
     }).catch(() => setConsentOpen(true));
   };
 
   const activateAI = async () => {
     if (navigator.storage?.persist) void navigator.storage.persist().catch(() => false);
-    if (pendingText) await prepareAIAndSend(pendingText);
+    if (pendingText || pendingAttachments.length) await prepareAIAndSend(pendingText, pendingAttachments);
   };
 
   const selectBasicMode = async () => {
     patchPreferences({ preferredMode: "basic" });
     setConsentOpen(false);
     const text = pendingText || composer.trim();
+    const attachments = pendingAttachments.length ? pendingAttachments : composerAttachments;
     setPendingText("");
-    if (text) await sendThroughEngine(text, basicEngine);
+    setPendingAttachments([]);
+    if (text || attachments.length) await sendThroughEngine(text, basicEngine, attachments);
   };
 
   const toggleChecklist = (id: string) => {
@@ -263,6 +300,24 @@ export default function App() {
   const copyMessage = async (content: string) => {
     await navigator.clipboard.writeText(content);
     setToast("Resposta copiada.");
+  };
+
+  const addAttachments = async (fileList: FileList | null) => {
+    if (!fileList?.length || attachmentBusy) return;
+    setAttachmentBusy(true);
+    try {
+      const result = await readChatAttachments([...fileList], composerAttachments);
+      setComposerAttachments(result.attachments);
+      setAttachmentError(result.errors.join(" "));
+    } finally {
+      setAttachmentBusy(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const removeAttachment = (attachmentId: string) => {
+    setComposerAttachments((current) => current.filter((attachment) => attachment.id !== attachmentId));
+    setAttachmentError("");
   };
 
   const deleteSession = (sessionId: string) => {
@@ -318,8 +373,7 @@ export default function App() {
         </aside>
         <section className="chat-shell" aria-labelledby="chat-title">
           <div className="chat-topbar">
-            <div><p className="eyebrow"><span className="signal-dot" /> Coordenador de produtividade</p><h1 id="chat-title">{activeSession?.title ?? "Nova conversa"}</h1></div>
-            <label className="model-selector"><span>Modelo</span><select aria-label="Modelo de IA" value={preferences.selectedModelId} disabled={busy || isGenerating} onChange={(event) => { if (isLocalModelId(event.target.value)) patchPreferences({ selectedModelId: event.target.value, preferredMode: "ask" }); }}>{LOCAL_MODELS.map((model) => <option key={model.id} value={model.id}>{model.name} — {model.recommendedRamGb} GB RAM</option>)}</select></label>
+            <div><p className="eyebrow"><span className="signal-dot" /> Assistente PomoLife</p><h1 id="chat-title">{activeSession?.title ?? "Nova conversa"}</h1></div>
           </div>
 
           <div className="chat-messages" aria-live="polite" aria-busy={isGenerating}>
@@ -328,7 +382,8 @@ export default function App() {
                 <div className="message-avatar">{message.role === "assistant" ? <Bot size={18} /> : <UserRound size={18} />}</div>
                 <div className="message-body">
                   <div className="message-meta"><strong>{message.role === "assistant" ? "PomoLife" : "Você"}</strong><span>{message.id === "welcome" ? "agora" : formatDate(message.createdAt)}</span>{message.mode && <small>{message.mode === "ai" ? "IA local" : "Plano básico"}</small>}</div>
-                  {message.content ? <InteractiveMessage message={message} checklist={activeSession?.checklist ?? []} onToggle={toggleChecklist} onStart={prepareFocus} /> : <div className="typing-indicator"><span /><span /><span /><em>Organizando o próximo passo…</em></div>}
+                  {message.content ? <InteractiveMessage message={message} checklist={activeSession?.checklist ?? []} onToggle={toggleChecklist} onStart={prepareFocus} /> : <div className="typing-indicator"><span /><span /><span /><em>Pensando…</em></div>}
+                  {message.attachments?.length ? <div className="message-attachments" aria-label="Arquivos anexados">{message.attachments.map((attachment) => <button key={attachment.id} type="button" onClick={() => setPreviewAttachment(attachment)} aria-label={`Visualizar arquivo ${attachment.name}`}><FileText size={14} /><span><strong>{attachment.name}</strong><small>{formatAttachmentSize(attachment.size)}</small></span></button>)}</div> : null}
                   {message.role === "assistant" && message.content && message.id !== "welcome" && <button className="message-copy" type="button" onClick={() => void copyMessage(message.content)}><Copy size={13} /> Copiar</button>}
                 </div>
               </article>
@@ -345,15 +400,21 @@ export default function App() {
               onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); requestSend(); } }}
               rows={3}
               maxLength={5_000}
-              placeholder="Ex.: preciso criar 8 carrosséis, mas não sei como organizar o trabalho…"
-              disabled={busy}
+              placeholder="Envie uma mensagem ou descreva no que você precisa de ajuda…"
+              disabled={busy || attachmentBusy}
             />
+            {composerAttachments.length ? <div className="composer-attachments" aria-label="Anexos desta mensagem">{composerAttachments.map((attachment) => <div className="composer-attachment" key={attachment.id}><button className="composer-attachment-preview" type="button" onClick={() => setPreviewAttachment(attachment)} aria-label={`Visualizar arquivo ${attachment.name}`}><FileText size={15} /><span><strong>{attachment.name}</strong><small>{formatAttachmentSize(attachment.size)}{attachment.truncated ? " · trecho local" : ""}</small></span></button><button className="composer-attachment-remove" type="button" onClick={() => removeAttachment(attachment.id)} aria-label={`Remover arquivo ${attachment.name}`}><X size={14} /></button></div>)}</div> : null}
+            {attachmentError && <p className="attachment-error" role="alert">{attachmentError}</p>}
             <div className="composer-footer">
-              <span><Sparkles size={14} /> Se faltar contexto, farei até 3 perguntas antes do plano.</span>
+              <div className="composer-tools">
+                <input ref={fileInputRef} className="sr-only" type="file" multiple accept={CHAT_ATTACHMENT_ACCEPT} aria-label="Selecionar arquivos de texto" onChange={(event) => void addAttachments(event.target.files)} />
+                <button className="composer-attach-button" type="button" disabled={busy || attachmentBusy} aria-label="Anexar arquivos" title="Anexar arquivos de texto" onClick={() => fileInputRef.current?.click()}><Paperclip size={16} /><span>{attachmentBusy ? "Lendo…" : "Anexar"}</span></button>
+                <label className="composer-model-selector"><span className="sr-only">Modelo</span><select aria-label="Modelo de IA" value={preferences.selectedModelId} disabled={busy || isGenerating} onChange={(event) => { if (isLocalModelId(event.target.value)) patchPreferences({ selectedModelId: event.target.value, preferredMode: "ask" }); }}>{LOCAL_MODELS.map((model) => <option key={model.id} value={model.id}>{model.name} — {model.recommendedRamGb} GB RAM</option>)}</select></label>
+              </div>
               {isGenerating ? (
                 <button className="button button-secondary" type="button" onClick={() => { abortRef.current?.abort(); void aiEngine.cancel(); void basicEngine.cancel(); }}><Square size={14} /> Parar</button>
               ) : (
-                <button className="button button-primary" type="submit" disabled={!composer.trim() || busy}><Send size={16} /> Enviar</button>
+                <button className="composer-send-button" type="submit" aria-label="Enviar" title="Enviar" disabled={(!composer.trim() && !composerAttachments.length) || busy || attachmentBusy}><Send size={17} /></button>
               )}
             </div>
           </form>
@@ -369,13 +430,18 @@ export default function App() {
                   <label><input type="checkbox" checked={item.completed} onChange={() => toggleChecklist(item.id)} /><span>{item.text}</span></label>
                   <button className="sidebar-task-start" type="button" aria-label={`Focar em ${item.text}`} onClick={() => prepareFocus(item.text)}><Play size={13} /></button>
                 </div>
-              )) : <p className="empty-checklist">O checklist desta conversa aparecerá depois do briefing.</p>}
+              )) : <p className="empty-checklist">As tarefas desta conversa aparecerão aqui quando houver um checklist.</p>}
             </div>
           </div>
         </aside>
       </main>
 
       <footer className="site-footer"><span>© {new Date().getFullYear()} PomoLife · Fael Records</span><span>Apoio à organização; não substitui acompanhamento profissional.</span></footer>
+
+      <Modal open={Boolean(previewAttachment)} labelledBy="attachment-preview-title" onClose={() => setPreviewAttachment(null)} className="compact-modal attachment-preview-modal">
+        <div className="modal-header"><div><p className="eyebrow"><FileText size={14} /> Anexo local</p><h2 id="attachment-preview-title">{previewAttachment?.name}</h2></div><button className="icon-button" type="button" aria-label="Fechar visualização" onClick={() => setPreviewAttachment(null)}><X size={18} /></button></div>
+        {previewAttachment && <><div className="attachment-preview-meta"><span>{formatAttachmentSize(previewAttachment.size)}</span><span>{previewAttachment.mimeType}</span>{previewAttachment.truncated && <span>Trecho reduzido para a análise local</span>}</div><pre className="attachment-preview-content">{previewAttachment.text}</pre></>}
+      </Modal>
 
       <Modal open={consentOpen} labelledBy="consent-title" onClose={() => { if (!busy) setConsentOpen(false); }} className="compact-modal consent-modal">
         <div className="modal-header"><div className="consent-icon"><Download size={22} /></div><button className="icon-button" type="button" aria-label="Fechar" disabled={busy} onClick={() => setConsentOpen(false)}><X size={18} /></button></div>

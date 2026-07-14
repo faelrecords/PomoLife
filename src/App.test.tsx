@@ -25,7 +25,7 @@ describe("PomoLife agent", () => {
     expect(screen.getByRole("heading", { name: "Nova conversa" })).toBeVisible();
     expect(screen.getByRole("textbox", { name: "Descreva sua tarefa" })).toBeVisible();
     expect(screen.queryByText("Cardápio de dopamina")).not.toBeInTheDocument();
-    expect(screen.getByText(/briefing curto/i)).toBeVisible();
+    expect(screen.getByText(/conversar sobre qualquer assunto/i)).toBeVisible();
     expect(screen.getByRole("combobox", { name: "Modelo de IA" })).toHaveValue("Qwen3-0.6B-q4f16_1-MLC");
     expect(screen.getByRole("option", { name: "Qwen3 1.7B — 4 GB RAM" })).toBeVisible();
     expect(screen.queryByText("IA não baixada")).not.toBeInTheDocument();
@@ -72,6 +72,38 @@ describe("PomoLife agent", () => {
     const { user } = renderApp();
     await user.selectOptions(screen.getByRole("combobox", { name: "Modelo de IA" }), "Qwen3.5-0.8B-q4f16_1-MLC");
     await waitFor(() => expect(loadAgentState().preferences.selectedModelId).toBe("Qwen3.5-0.8B-q4f16_1-MLC"));
+  });
+
+  it("mantém o seletor de modelo no composer e gerencia anexos locais", async () => {
+    const { user, container } = renderApp();
+    const composerForm = container.querySelector(".chat-composer");
+    expect(composerForm).toContainElement(screen.getByRole("combobox", { name: "Modelo de IA" }));
+    expect(container.querySelector(".chat-topbar select")).not.toBeInTheDocument();
+
+    const input = container.querySelector<HTMLInputElement>('input[type="file"]');
+    expect(input).not.toBeNull();
+    await user.upload(input!, new File(["Prazo: sexta-feira\nEntregável: relatório"], "briefing.md", { type: "text/markdown" }));
+    expect(await screen.findByText("briefing.md")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Enviar" })).toBeEnabled();
+
+    await user.click(screen.getByRole("button", { name: "Visualizar arquivo briefing.md" }));
+    expect(screen.getByRole("dialog", { name: "briefing.md" })).toHaveTextContent("Prazo: sexta-feira");
+    await user.click(screen.getByRole("button", { name: "Fechar visualização" }));
+    await user.click(screen.getByRole("button", { name: "Remover arquivo briefing.md" }));
+    expect(screen.queryByText("briefing.md")).not.toBeInTheDocument();
+  });
+
+  it("envia e persiste uma mensagem composta apenas por anexo", async () => {
+    const { user, container } = renderApp();
+    const input = container.querySelector<HTMLInputElement>('input[type="file"]');
+    await user.upload(input!, new File(["Tarefa A\nTarefa B"], "tarefas.txt", { type: "text/plain" }));
+    await user.click(screen.getByRole("button", { name: "Enviar" }));
+    const consent = screen.getByRole("dialog", { name: "Baixar a IA local?" });
+    await user.click(within(consent).getByRole("button", { name: "Continuar no modo básico" }));
+
+    expect(await screen.findByText("Analise os arquivos anexados.", { selector: ".user-message-copy" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Visualizar arquivo tarefas.txt" })).toBeVisible();
+    await waitFor(() => expect(loadAgentState().sessions[0]?.messages[0]?.attachments?.[0]?.name).toBe("tarefas.txt"));
   });
 
   it("troca a checklist junto com a conversa de origem", async () => {

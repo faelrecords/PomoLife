@@ -1,6 +1,6 @@
 # PomoLife
 
-Agente local de produtividade em português para transformar tarefas grandes em briefings curtos, microtarefas, checklists e blocos Pomodoro.
+Assistente de IA em português que funciona como chat geral e ativa recursos de produtividade, TDAH, microtarefas, checklists e Pomodoro quando eles forem úteis.
 
 Produção: [pomolife.vibecodex.pro](https://pomolife.vibecodex.pro/)
 
@@ -25,8 +25,9 @@ npm run test:e2e
 ## Privacidade e IA local
 
 - Não há backend, conta, chave de API ou analytics.
-- O texto das conversas é processado no dispositivo.
-- A primeira ativação baixa aproximadamente 352 MB do Qwen3 0.6B.
+- O texto das conversas e dos anexos é processado no dispositivo.
+- Arquivos de texto, Markdown, CSV, JSON e código podem ser anexados e analisados localmente.
+- O seletor oferece modelos locais para diferentes capacidades de memória; cada modelo é baixado somente quando escolhido.
 - O modelo fica no cache do navegador e pode ser removido nas configurações.
 - Sem WebGPU, o PomoLife continua funcionando no modo básico.
 - O player oficial do YouTube recebe dados técnicos quando é carregado, mas nunca recebe o conteúdo do chat.

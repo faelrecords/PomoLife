@@ -4,6 +4,15 @@ export type AgentMode = "ai" | "basic";
 export type AgentRole = "user" | "assistant";
 export type AgentStage = "briefing" | "plan" | "message";
 
+export interface ChatAttachment {
+  id: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  text: string;
+  truncated: boolean;
+}
+
 export interface ChatMessage {
   id: string;
   role: AgentRole;
@@ -11,6 +20,7 @@ export interface ChatMessage {
   createdAt: string;
   mode?: AgentMode;
   stage?: AgentStage;
+  attachments?: ChatAttachment[];
 }
 
 export interface ChecklistItem {
@@ -79,4 +89,3 @@ export interface AgentEngine {
 }
 
 export type AgentIssue = PlannerEngineIssue;
-

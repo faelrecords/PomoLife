@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ExternalLink, Music2, Pause, Play, Search, Settings2, Video, Volume2, X } from "lucide-react";
 import { DEFAULT_YOUTUBE_URL, parseYouTubeSource, youtubeSearchUrl, type YouTubeSource } from "../lib/youtube";
 import { Modal } from "./Modal";
@@ -23,6 +23,8 @@ declare global {
 }
 
 let apiPromise: Promise<YouTubeNamespace> | null = null;
+export const YOUTUBE_VIDEO_PREVIEW_MS = 1_000;
+
 function loadYouTubeApi(): Promise<YouTubeNamespace> {
   if (window.YT?.Player) return Promise.resolve(window.YT);
   if (apiPromise) return apiPromise;
@@ -52,6 +54,7 @@ export function YouTubePlayer({ initialUrl = DEFAULT_YOUTUBE_URL, initialVolume 
   const mountRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<PlayerApi | null>(null);
   const volumeRef = useRef(initialVolume);
+  const minimizeTimerRef = useRef<number | null>(null);
   const [source, setSource] = useState<YouTubeSource>(() => parseYouTubeSource(initialUrl) ?? parseYouTubeSource(DEFAULT_YOUTUBE_URL)!);
   const [volume, setVolume] = useState(initialVolume);
   const [playing, setPlaying] = useState(false);
@@ -61,6 +64,22 @@ export function YouTubePlayer({ initialUrl = DEFAULT_YOUTUBE_URL, initialVolume 
   const [urlInput, setUrlInput] = useState(initialUrl);
   const [query, setQuery] = useState("");
   const [error, setError] = useState("");
+
+  const cancelAutomaticMinimize = useCallback(() => {
+    if (minimizeTimerRef.current !== null) {
+      window.clearTimeout(minimizeTimerRef.current);
+      minimizeTimerRef.current = null;
+    }
+  }, []);
+
+  const showVideoTemporarily = useCallback(() => {
+    cancelAutomaticMinimize();
+    setVideoOpen(true);
+    minimizeTimerRef.current = window.setTimeout(() => {
+      setVideoOpen(false);
+      minimizeTimerRef.current = null;
+    }, YOUTUBE_VIDEO_PREVIEW_MS);
+  }, [cancelAutomaticMinimize]);
 
   useEffect(() => {
     let disposed = false;
@@ -91,14 +110,19 @@ export function YouTubePlayer({ initialUrl = DEFAULT_YOUTUBE_URL, initialVolume 
           },
           onStateChange: (event: { data: number }) => {
             setPlaying(event.data === 1);
-            if (event.data === 1) { setAutoplayBlocked(false); setVideoOpen(true); }
+            if (event.data === 1) { setAutoplayBlocked(false); showVideoTemporarily(); }
           },
           onAutoplayBlocked: () => setAutoplayBlocked(true),
         },
       });
     });
-    return () => { disposed = true; playerRef.current?.destroy(); playerRef.current = null; };
-  }, [source]);
+    return () => {
+      disposed = true;
+      cancelAutomaticMinimize();
+      playerRef.current?.destroy();
+      playerRef.current = null;
+    };
+  }, [cancelAutomaticMinimize, showVideoTemporarily, source]);
 
   useEffect(() => { volumeRef.current = volume; playerRef.current?.setVolume(volume); }, [volume]);
 
@@ -116,16 +140,19 @@ export function YouTubePlayer({ initialUrl = DEFAULT_YOUTUBE_URL, initialVolume 
       <div className="header-player" aria-label="Música de foco do YouTube">
         <button type="button" className="header-player-action" aria-label={playing ? "Pausar música" : "Ativar música"} onClick={() => {
           if (playing) playerRef.current?.pauseVideo();
-          else { setVideoOpen(true); playerRef.current?.playVideo(); }
+          else { showVideoTemporarily(); playerRef.current?.playVideo(); }
         }}>
           <span className="header-player-icon">{playing ? <Pause size={14} /> : <Play size={14} />}</span>
           <span><small>Música de foco</small><strong>{autoplayBlocked ? "Ativar música" : playing ? "Tocando agora" : "Pausada"}</strong></span>
         </button>
         <label className="header-volume"><Volume2 size={14} /><span className="sr-only">Volume</span><input type="range" min={0} max={100} value={volume} onChange={(event) => { const next = Number(event.target.value); setVolume(next); onPreferenceChange(source.url, next); }} /></label>
-        <button className="header-player-button" type="button" aria-label="Mostrar vídeo oficial" onClick={() => setVideoOpen((open) => !open)}><Video size={15} /></button>
+        <button className="header-player-button" type="button" aria-label={videoOpen ? "Minimizar vídeo oficial" : "Mostrar vídeo oficial"} onClick={() => {
+          cancelAutomaticMinimize();
+          setVideoOpen((open) => !open);
+        }}><Video size={15} /></button>
         <button className="header-player-button" type="button" aria-label="Trocar música" onClick={() => { playerRef.current?.pauseVideo(); setVideoOpen(false); setModalOpen(true); }}><Settings2 size={15} /></button>
         <div className={`youtube-popover ${videoOpen ? "is-open" : ""}`} aria-hidden={!videoOpen}>
-          <div className="youtube-popover-heading"><span><Music2 size={14} /> Player oficial do YouTube</span><button type="button" aria-label="Fechar vídeo e pausar" onClick={() => { playerRef.current?.pauseVideo(); setVideoOpen(false); }}><X size={15} /></button></div>
+          <div className="youtube-popover-heading"><span><Music2 size={14} /> Player oficial do YouTube</span><button type="button" aria-label="Minimizar vídeo" onClick={() => { cancelAutomaticMinimize(); setVideoOpen(false); }}><X size={15} /></button></div>
           <div className="youtube-frame"><div key={source.url} ref={mountRef} /></div>
         </div>
       </div>

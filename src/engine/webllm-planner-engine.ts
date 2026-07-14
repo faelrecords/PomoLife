@@ -20,10 +20,10 @@ import {
   type PlannerGenerationResult,
 } from "./types";
 
-export const WEBLLM_MODEL_ID = "Qwen2.5-0.5B-Instruct-q4f16_1-MLC";
-export const WEBLLM_CONTEXT_WINDOW_SIZE = 2_048;
-export const WEBLLM_ESTIMATED_DOWNLOAD_MB = 290;
-export const WEBLLM_ESTIMATED_VRAM_MB = 945;
+export const WEBLLM_MODEL_ID = "Qwen3-0.6B-q4f16_1-MLC";
+export const WEBLLM_CONTEXT_WINDOW_SIZE = 4_096;
+export const WEBLLM_ESTIMATED_DOWNLOAD_MB = 352;
+export const WEBLLM_ESTIMATED_VRAM_MB = 1_403;
 const BRAIN_DUMP_DIRECT_BYTE_LIMIT = 3_200;
 const BRAIN_DUMP_CHUNK_BYTE_LIMIT = 3_000;
 const BRAIN_DUMP_SUMMARY_TOKENS = 120;
@@ -474,6 +474,7 @@ export class WebLLMPlannerEngine implements PlannerEngine {
         stream: true,
         temperature: definition.generation.temperature,
         max_tokens: definition.generation.maxTokens,
+        extra_body: { enable_thinking: false },
         }),
         this.workerFailure,
         generationCancellation,
@@ -694,6 +695,7 @@ export class WebLLMPlannerEngine implements PlannerEngine {
         stream: false,
         temperature: 0.1,
         max_tokens: BRAIN_DUMP_SUMMARY_TOKENS,
+        extra_body: { enable_thinking: false },
       }), this.workerFailure, generationCancellation]);
       const summary = completion.choices[0]?.message.content?.trim();
       if (!summary) return null;

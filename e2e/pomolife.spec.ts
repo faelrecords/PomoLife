@@ -1,224 +1,99 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 
-const MODEL_HOST_PATTERN = /(?:huggingface\.co|mlc\.ai|raw\.githubusercontent\.com)/i;
-
-async function preventModelDownloads(page: Page): Promise<string[]> {
-  const attemptedDownloads: string[] = [];
-
-  await page.route("**/*", async (route) => {
-    const url = route.request().url();
-    if (MODEL_HOST_PATTERN.test(url)) {
-      attemptedDownloads.push(url);
-      await route.abort("blockedbyclient");
-      return;
-    }
-
-    await route.continue();
-  });
-
-  return attemptedDownloads;
+async function withoutWebGPU(page: Page) {
+  await page.addInitScript(() => Object.defineProperty(navigator, "gpu", { configurable: true, value: undefined }));
 }
 
-async function emulateBrowserWithoutWebGPU(page: Page): Promise<void> {
-  await page.addInitScript(() => {
-    Object.defineProperty(navigator, "gpu", {
-      configurable: true,
-      value: undefined,
-    });
-  });
+async function blockExternalMedia(page: Page) {
+  await page.route(/(?:youtube\.com|youtube-nocookie\.com|googlevideo\.com)/, (route) => route.abort("blockedbyclient"));
 }
 
-async function openParalysisPlanner(page: Page): Promise<void> {
-  await page.getByRole("button", { name: /Quebrando a paralisia/ }).click();
-  await expect(
-    page.getByRole("dialog", { name: "Quebrando a paralisia" }),
-  ).toBeVisible();
+async function sendBasic(page: Page, text: string) {
+  const composer = page.getByRole("textbox", { name: "Descreva sua tarefa" });
+  await composer.fill(text);
+  await page.getByRole("button", { name: "Enviar" }).click();
+  const consent = page.getByRole("dialog", { name: "Ativar o coordenador local?" });
+  if (await consent.isVisible().catch(() => false)) await consent.getByRole("button", { name: "Usar modo básico" }).click();
 }
 
-async function fillParalysisPlanner(page: Page): Promise<void> {
-  const planner = page.getByRole("dialog", {
-    name: "Quebrando a paralisia",
-  });
-
-  await planner
-    .getByRole("textbox", { name: "Tarefa", exact: true })
-    .fill("revisar o relatório semanal");
-  await planner
-    .getByRole("textbox", { name: "Onde você travou", exact: true })
-    .fill("não sei qual seção abrir primeiro");
-  await planner
-    .getByRole("textbox", { name: "Onde a tarefa acontece", exact: true })
-    .fill("no notebook da mesa");
+async function openMobileHeaderIfNeeded(page: Page) {
+  if ((page.viewportSize()?.width ?? 1_000) <= 640) {
+    await page.getByRole("button", { name: "Abrir menu" }).click();
+  }
 }
 
 test.beforeEach(async ({ page }) => {
-  await emulateBrowserWithoutWebGPU(page);
+  await withoutWebGPU(page);
+  await blockExternalMedia(page);
 });
 
-test("é servido corretamente na raiz do domínio personalizado", async ({ page }) => {
-  const attemptedDownloads = await preventModelDownloads(page);
+test("é servido na raiz como um único chat local", async ({ page }) => {
   const response = await page.goto("./");
-
   expect(response?.ok()).toBe(true);
   expect(new URL(page.url()).pathname).toBe("/");
   await expect(page).toHaveTitle(/PomoLife/);
-  await expect(
-    page.getByRole("heading", { name: "Clareza para começar. Foco para continuar." }),
-  ).toBeVisible();
-  await expect(page.getByRole("link", { name: "PomoLife, início" })).toHaveAttribute(
-    "href",
-    "/",
-  );
-  expect(attemptedDownloads).toEqual([]);
+  await expect(page.getByRole("heading", { name: "Nova conversa" })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Descreva sua tarefa" })).toBeVisible();
+  await expect(page.locator(".tool-card")).toHaveCount(0);
 });
 
-test("abre um card, atualiza o hash e apresenta os campos correspondentes", async ({
-  page,
-}) => {
-  await preventModelDownloads(page);
+test("faz briefing, cria checklist e salva o progresso", async ({ page }) => {
   await page.goto("./");
-
-  await page.getByRole("button", { name: /Transformar em jogo/ }).click();
-
-  const planner = page.getByRole("dialog", { name: "Transformar em jogo" });
-  await expect(planner).toBeVisible();
-  await expect(page).toHaveURL(/#transformar-em-jogo$/);
-  await expect(
-    planner.getByRole("textbox", { name: "Tarefa administrativa", exact: true }),
-  ).toBeVisible();
-  await expect(
-    planner.getByRole("textbox", { name: "Interesse do momento", exact: true }),
-  ).toBeVisible();
-  await expect(
-    planner.getByRole("textbox", { name: "Recompensa desejada", exact: true }),
-  ).toBeVisible();
-  await expect(
-    planner.getByRole("spinbutton", {
-      name: "Tempo disponível (minutos)",
-      exact: true,
-    }),
-  ).toHaveValue("30");
-
-  await planner.getByRole("button", { name: "Fechar ferramenta" }).click();
-  await expect(planner).toBeHidden();
-  await expect(page).not.toHaveURL(/#/);
+  await sendBasic(page, "Preciso criar 8 carrosséis");
+  await expect(page.getByText(/qual entrega concreta/i)).toBeVisible();
+  await sendBasic(page, "São 8 temas, 6 páginas, copy pronta, identidade definida e prazo hoje");
+  const checkbox = page.getByRole("checkbox", { name: /reunir em um único lugar/i });
+  await expect(checkbox).toBeVisible();
+  await checkbox.check();
+  await expect(checkbox).toBeChecked();
+  const stored = await page.evaluate(() => localStorage.getItem("pomolife:agent-state"));
+  expect(stored).toContain('"completed":true');
+  await expect(page.locator(".progress-heading strong")).toContainText("1/6");
 });
 
-test("gera um plano básico quando WebGPU não está disponível e não baixa o modelo", async ({
-  page,
-}) => {
-  const attemptedDownloads = await preventModelDownloads(page);
+test("restaura conversas após recarregar", async ({ page }) => {
   await page.goto("./");
-
-  await expect(page.locator(".engine-status")).toBeVisible();
-  await expect(page.locator(".engine-status")).toContainText("Modo básico");
-  await openParalysisPlanner(page);
-  await fillParalysisPlanner(page);
-
-  const planner = page.getByRole("dialog", {
-    name: "Quebrando a paralisia",
-  });
-  await planner.getByRole("button", { name: "Gerar plano" }).click();
-
-  await expect(planner.getByText("Plano básico", { exact: true })).toBeVisible();
-  await expect(planner.locator(".markdown-result")).toContainText(
-    "Primeiro passo — menos de 1 minuto",
-  );
-  await expect(planner.locator(".markdown-result")).toContainText(
-    "revisar o relatório semanal",
-  );
-  await expect(planner.getByRole("button", { name: "Começar agora" })).toBeVisible();
-  expect(attemptedDownloads).toEqual([]);
-});
-
-test("restaura o histórico local após recarregar a página", async ({ page }) => {
-  const attemptedDownloads = await preventModelDownloads(page);
-  await page.goto("./");
-  await openParalysisPlanner(page);
-  await fillParalysisPlanner(page);
-
-  const planner = page.getByRole("dialog", {
-    name: "Quebrando a paralisia",
-  });
-  await planner.getByRole("button", { name: "Gerar plano" }).click();
-  await expect(planner.getByText("Plano básico", { exact: true })).toBeVisible();
-
-  const storedState = await page.evaluate(() => localStorage.getItem("pomolife:state"));
-  expect(storedState).toContain("revisar o relatório semanal");
-
+  await sendBasic(page, "Organizar relatório mensal");
   await page.reload();
-  await expect(page).toHaveURL(/#quebrando-a-paralisia$/);
-  await page
-    .getByRole("dialog", { name: "Quebrando a paralisia" })
-    .getByRole("button", { name: "Fechar ferramenta" })
-    .click();
-
-  await page.getByRole("button", { name: "Abrir histórico" }).click();
-  const history = page.getByRole("dialog", { name: "Histórico" });
-  await expect(history).toBeVisible();
-  await expect(history.getByText("Quebrando a paralisia", { exact: true })).toBeVisible();
-  await expect(page.locator(".button-count")).toHaveText("1");
-
-  await history.locator(".history-open").click();
-  const restoredPlanner = page.getByRole("dialog", {
-    name: "Quebrando a paralisia",
-  });
-  await expect(restoredPlanner.locator(".markdown-result")).toContainText(
-    "revisar o relatório semanal",
-  );
-  expect(attemptedDownloads).toEqual([]);
+  await openMobileHeaderIfNeeded(page);
+  await page.getByRole("button", { name: "Histórico" }).click();
+  const history = page.getByRole("dialog", { name: "Conversas" });
+  await expect(history.getByText("Organizar relatório mensal")).toBeVisible();
+  await history.getByText("Organizar relatório mensal").click();
+  await expect(page.getByText(/qual entrega concreta/i)).toBeVisible();
 });
 
-test("mantém cards e ferramenta utilizáveis em viewport mobile", async ({ page }) => {
+test("inicia e restaura um Pomodoro com horário absoluto", async ({ page }) => {
+  await page.goto("./");
+  await sendBasic(page, "Finalizar apresentação");
+  await sendBasic(page, "10 slides, conteúdo pronto, entrega hoje");
+  await page.getByRole("button", { name: /iniciar foco em reunir/i }).click();
+  const dialog = page.getByRole("dialog", { name: "Iniciar um bloco de foco?" });
+  await dialog.getByRole("button", { name: /15 min pausa de 5/i }).click();
+  await dialog.getByRole("button", { name: "Começar agora" }).click();
+  await expect(page.getByRole("complementary", { name: "Pomodoro em andamento" })).toContainText("15/5");
+  await page.reload();
+  await expect(page.getByRole("complementary", { name: "Pomodoro em andamento" })).toContainText(/Reunir em um único lugar/i);
+});
+
+test("mantém chat e player utilizáveis em viewport mobile", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await preventModelDownloads(page);
   await page.goto("./");
-
-  const cards = page.locator(".tool-card");
-  await expect(cards).toHaveCount(7);
-  await page.evaluate(() => document.fonts.ready);
-  const [firstCardBox, secondCardBox] = await cards.evaluateAll((elements) =>
-    elements.slice(0, 2).map((element) => {
-      const box = element.getBoundingClientRect();
-      return { x: box.x, y: box.y, width: box.width, height: box.height };
-    }),
-  );
-
-  expect(Math.abs(firstCardBox.x - secondCardBox.x)).toBeLessThan(2);
-  expect(secondCardBox.y).toBeGreaterThanOrEqual(
-    firstCardBox.y + firstCardBox.height,
-  );
-
-  await openParalysisPlanner(page);
-  const planner = page.getByRole("dialog", {
-    name: "Quebrando a paralisia",
-  });
-  const plannerBox = await planner.boundingBox();
-  const formBox = await planner.locator(".planner-form").boundingBox();
-  const resultBox = await planner.locator(".result-panel").boundingBox();
-  const plannerColumnCount = await planner.locator(".planner-grid").evaluate((element) =>
-    getComputedStyle(element).gridTemplateColumns.trim().split(/\s+/).length,
-  );
-
-  expect(plannerBox?.x ?? Number.POSITIVE_INFINITY).toBeLessThan(2);
-  expect(plannerBox?.width ?? 0).toBeGreaterThanOrEqual(386);
-  expect(plannerBox?.width ?? 0).toBeLessThanOrEqual(390);
-  expect(plannerColumnCount).toBe(1);
-  expect(resultBox?.y ?? 0).toBeGreaterThan((formBox?.y ?? 0) + 100);
-  await expect(planner.getByRole("button", { name: "Gerar plano" })).toBeVisible();
+  await expect(page.locator(".chat-shell")).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Descreva sua tarefa" })).toBeVisible();
+  await page.locator(".youtube-player").scrollIntoViewIfNeeded();
+  await expect(page.locator(".youtube-player")).toBeVisible();
+  const box = await page.locator(".chat-shell").boundingBox();
+  expect(box?.width ?? 0).toBeLessThanOrEqual(390);
 });
 
-test("não possui violações críticas de acessibilidade segundo o axe", async ({ page }) => {
-  await preventModelDownloads(page);
+test("não apresenta violações críticas de acessibilidade", async ({ page }) => {
   await page.goto("./");
-
-  const homeScan = await new AxeBuilder({ page }).analyze();
-  expect(homeScan.violations.filter(({ impact }) => impact === "critical")).toEqual([]);
-
-  await openParalysisPlanner(page);
-  const plannerScan = await new AxeBuilder({ page })
-    .include(".planner-modal")
-    .analyze();
-  expect(plannerScan.violations.filter(({ impact }) => impact === "critical")).toEqual([]);
+  const home = await new AxeBuilder({ page }).analyze();
+  expect(home.violations.filter(({ impact }) => impact === "critical")).toEqual([]);
+  await openMobileHeaderIfNeeded(page);
+  await page.getByRole("button", { name: "Configurações" }).click();
+  const settings = await new AxeBuilder({ page }).include(".settings-modal").analyze();
+  expect(settings.violations.filter(({ impact }) => impact === "critical")).toEqual([]);
 });

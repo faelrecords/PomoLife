@@ -1,6 +1,6 @@
 # PomoLife
 
-Sete ferramentas de planejamento e foco em português, com inferência local no navegador por meio do WebLLM e um modo básico que funciona sem IA.
+Agente local de produtividade em português para transformar tarefas grandes em briefings curtos, microtarefas, checklists e blocos Pomodoro.
 
 Produção: [pomolife.vibecodex.pro](https://pomolife.vibecodex.pro/)
 
@@ -25,11 +25,12 @@ npm run test:e2e
 ## Privacidade e IA local
 
 - Não há backend, conta, chave de API ou analytics.
-- Os textos preenchidos são processados no dispositivo.
-- A primeira ativação baixa aproximadamente 300 MB de arquivos do modelo.
-- O modelo fica no cache do navegador e pode ser removido pelas configurações do site.
-- Sem WebGPU, o PomoLife continua funcionando no modo básico local.
+- O texto das conversas é processado no dispositivo.
+- A primeira ativação baixa aproximadamente 352 MB do Qwen3 0.6B.
+- O modelo fica no cache do navegador e pode ser removido nas configurações.
+- Sem WebGPU, o PomoLife continua funcionando no modo básico.
+- O player oficial do YouTube recebe dados técnicos quando é carregado, mas nunca recebe o conteúdo do chat.
 
 ## Publicação
 
-Todo push na branch `main` executa lint, testes e build antes de publicar `dist` no GitHub Pages. O arquivo `public/CNAME` configura o domínio `pomolife.vibecodex.pro`.
+Todo push na branch `main` executa lint, testes e build antes de publicar `dist` no GitHub Pages. O arquivo `public/CNAME` configura `pomolife.vibecodex.pro`.

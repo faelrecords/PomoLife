@@ -1,4 +1,4 @@
-const MODEL_ID = "Qwen2.5-0.5B-Instruct-q4f16_1-MLC";
+const MODEL_ID = "Qwen3-0.6B-q4f16_1-MLC";
 
 export interface MockWebLLMScenario {
   cached?: boolean;
@@ -40,7 +40,7 @@ export const prebuiltAppConfig = {
       model: `https://huggingface.co/mlc-ai/${MODEL_ID}`,
       model_id: MODEL_ID,
       model_lib: "mock://qwen-model-lib.wasm",
-      overrides: { context_window_size: 2_048 },
+      overrides: { context_window_size: 4_096 },
     },
   ],
 };
@@ -87,10 +87,10 @@ class MockEngine {
           const current = scenario();
           await delay(current.tokenDelayMs ?? 40);
           const content = (current.chunks ?? [
-            "## Plano local\n\n",
-            "1. Abra somente o material necessário.\n",
-            "2. Faça um movimento pequeno e observável.\n",
-            "3. Pare e registre o próximo passo.",
+            "[[PLANO]]## Entendimento\n\nTarefa compreendida.\n",
+            "## Primeiro movimento · menos de 1 min\nAbra o arquivo principal.\n",
+            "## Checklist\n- [ ] Abrir o material · 2 min\n",
+            "## Tempo e foco\nUse **25/5**.\n\n## Pronto quando\nA entrega estiver revisada.",
           ]).join("");
           record("completion", { content });
           return {
@@ -120,10 +120,10 @@ class MockEngine {
   private async *streamChunks(): AsyncGenerator<MockCompletionChunk> {
     const current = scenario();
     const chunks = current.chunks ?? [
-      "## Plano local\n\n",
-      "1. Abra somente o material necessário.\n",
-      "2. Faça um movimento pequeno e observável.\n",
-      "3. Pare e registre o próximo passo.",
+      "[[PLANO]]## Entendimento\n\nTarefa compreendida.\n",
+      "## Primeiro movimento · menos de 1 min\nAbra o arquivo principal.\n",
+      "## Checklist\n- [ ] Abrir o material · 2 min\n",
+      "## Tempo e foco\nUse **25/5**.\n\n## Pronto quando\nA entrega estiver revisada.",
     ];
     const tokenDelayMs = current.tokenDelayMs ?? 40;
 

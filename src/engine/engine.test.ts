@@ -92,7 +92,7 @@ describe("BasicPlannerEngine", () => {
 });
 
 describe("WebLLMPlannerEngine", () => {
-  it("loads lazily with Cache API and a 2048-token context", async () => {
+  it("loads lazily with Cache API and a 4096-token context", async () => {
     const { runtime } = mockRuntime();
     const terminate = vi.fn();
     const engine = new WebLLMPlannerEngine({
@@ -110,7 +110,7 @@ describe("WebLLMPlannerEngine", () => {
       initProgressCallback: (report: InitProgressReport) => void;
     };
     expect(config.appConfig.cacheBackend).toBe("cache");
-    expect(config.appConfig.model_list[0]?.overrides?.context_window_size).toBe(2_048);
+    expect(config.appConfig.model_list[0]?.overrides?.context_window_size).toBe(4_096);
     expect(runtime.CreateWebWorkerMLCEngine).toHaveBeenCalledWith(
       expect.anything(),
       WEBLLM_MODEL_ID,
@@ -423,7 +423,7 @@ describe("WebGPU and model configuration", () => {
     const { runtime } = mockRuntime();
     const config = createWebLLMAppConfig(runtime as unknown as WebLLMRuntime);
 
-    expect(config.model_list[0]?.overrides?.context_window_size).toBe(2_048);
+    expect(config.model_list[0]?.overrides?.context_window_size).toBe(4_096);
     expect(runtime.prebuiltAppConfig.model_list[0]?.overrides?.context_window_size).toBe(4_096);
   });
 });

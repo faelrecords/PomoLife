@@ -137,10 +137,9 @@ export default function App() {
   }, [toast]);
   useEffect(() => () => { abortRef.current?.abort(); void aiEngine.dispose(); void basicEngine.dispose(); }, [aiEngine, basicEngine]);
   useEffect(() => {
-    if (!settingsOpen) return;
     setModelCached(null);
     void aiEngine.hasModelInCache().then(setModelCached).catch(() => setModelCached("error"));
-  }, [aiEngine, settingsOpen]);
+  }, [aiEngine]);
 
   const patchPreferences = useCallback((patch: Partial<AgentPreferences>) => {
     setPreferences((current) => ({ ...current, ...patch }));
@@ -172,7 +171,7 @@ export default function App() {
       const result = await engine.sendMessage({ messages: requestMessages, checklist: session.checklist }, {
         signal: controller.signal,
         onToken: (_delta, complete) => {
-          const visible = complete.replace(/^\s*\[\[(?:BRIEFING|PLANO)\]\]\s*/i, "");
+          const visible = parseAgentOutput(complete).text;
           setSessions((current) => updateSessionList(current, session.id, (item) => ({
             ...item,
             messages: item.messages.map((message) => message.id === assistantId ? { ...message, content: visible } : message),
@@ -216,6 +215,7 @@ export default function App() {
   const activateAI = async () => {
     try {
       await aiEngine.initialize();
+      setModelCached(true);
       patchPreferences({ preferredMode: "ai" });
       setConsentOpen(false);
       const text = pendingText;
@@ -317,9 +317,12 @@ export default function App() {
           <div className="sidebar-heading"><span><History size={14} /> Conversas</span><button className="icon-button icon-button-small" type="button" aria-label="Criar conversa" onClick={newConversation}><MessageSquarePlus size={15} /></button></div>
           <nav className="sidebar-conversations">
             {sessions.map((session) => (
-              <button key={session.id} type="button" className={session.id === activeSessionId ? "is-active" : ""} onClick={() => setActiveSessionId(session.id)}>
-                <span>{session.title}</span><small>{session.messages.length} mensagens</small>
-              </button>
+              <div key={session.id} className={`sidebar-conversation-item ${session.id === activeSessionId ? "is-active" : ""}`}>
+                <button className="sidebar-conversation-open" type="button" onClick={() => setActiveSessionId(session.id)}>
+                  <span>{session.title}</span><small>{session.messages.length} mensagens</small>
+                </button>
+                <button className="sidebar-conversation-delete" type="button" aria-label={`Excluir ${session.title}`} title="Excluir conversa" onClick={() => deleteSession(session.id)}><Trash2 size={14} /></button>
+              </div>
             ))}
           </nav>
           <button className="sidebar-manage" type="button" onClick={() => setHistoryOpen(true)}>Gerenciar conversas <ChevronRight size={14} /></button>
@@ -380,7 +383,7 @@ export default function App() {
               )) : <p className="empty-checklist">O checklist desta conversa aparecerá depois do briefing.</p>}
             </div>
           </div>
-          <div className="local-card"><Cpu size={18} /><div><strong>Privado por arquitetura</strong><p>Suas tarefas não são enviadas. O YouTube recebe dados técnicos do player.</p></div></div>
+          <div className="local-card dependency-card"><Cpu size={18} /><div><strong>Baixar dependências</strong><p>{modelCached === true || aiSnapshot.status === "ready" ? "O modelo local já está disponível neste dispositivo." : modelCached === null ? "Verificando os arquivos da IA…" : "Baixe o modelo para usar o planejamento com IA neste navegador."}</p>{modelCached !== true && aiSnapshot.status !== "ready" && <button className="button button-secondary" type="button" disabled={modelCached === null || busy} onClick={() => setConsentOpen(true)}><Download size={14} /> Baixar modelo</button>}</div></div>
         </aside>
       </main>
 

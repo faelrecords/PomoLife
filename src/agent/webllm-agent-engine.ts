@@ -11,7 +11,7 @@ function coordinatorDefinition(prompt: string): PromptDefinition {
     title: "Coordenador PomoLife",
     description: "",
     fields: [],
-    generation: { temperature: 0.15, maxTokens: 620 },
+    generation: { temperature: 0.12, maxTokens: 420 },
     validate: () => ({}),
     buildPrompt: () => prompt,
     createFallback: () => "",

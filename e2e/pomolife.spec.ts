@@ -35,6 +35,8 @@ test("é servido na raiz como um único chat local", async ({ page }) => {
   await expect(page).toHaveTitle(/PomoLife/);
   await expect(page.getByRole("heading", { name: "Nova conversa" })).toBeVisible();
   await expect(page.getByRole("textbox", { name: "Descreva sua tarefa" })).toBeVisible();
+  await expect(page.getByText("Baixar dependências")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Baixar modelo" })).toBeVisible();
   await expect(page.locator(".tool-card")).toHaveCount(0);
 });
 
@@ -86,6 +88,16 @@ test("mantém chat e player utilizáveis em viewport mobile", async ({ page }) =
   await expect(page.locator(".header-player")).toBeVisible();
   const box = await page.locator(".chat-shell").boundingBox();
   expect(box?.width ?? 0).toBeLessThanOrEqual(390);
+});
+
+test("abre o seletor de música sem recortar o modal nem sobrepor o vídeo", async ({ page }) => {
+  await page.goto("./");
+  await page.getByRole("button", { name: "Trocar música" }).click();
+  const dialog = page.getByRole("dialog", { name: "Escolher trilha" });
+  await expect(dialog).toBeVisible();
+  const box = await dialog.boundingBox();
+  expect(box?.y ?? -1).toBeGreaterThanOrEqual(0);
+  await expect(page.locator(".youtube-popover")).not.toHaveClass(/is-open/);
 });
 
 test("não apresenta violações críticas de acessibilidade", async ({ page }) => {

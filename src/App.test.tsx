@@ -76,9 +76,19 @@ describe("PomoLife agent", () => {
     const sidebar = screen.getByRole("complementary", { name: "Conversas criadas" });
     const checklist = screen.getByRole("complementary", { name: /Checklist de/i });
     expect(within(checklist).getByText("Publicar Beta")).toBeVisible();
-    await user.click(within(sidebar).getByRole("button", { name: /Projeto Alpha/i }));
+    await user.click(within(sidebar).getByRole("button", { name: /^Projeto Alpha/i }));
     expect(within(checklist).getByText("Revisar Alpha")).toBeVisible();
     expect(within(checklist).queryByText("Publicar Beta")).not.toBeInTheDocument();
+  });
+
+  it("exclui uma conversa diretamente pela barra lateral", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const { user } = renderApp();
+    await user.click(screen.getByRole("button", { name: "Nova conversa" }));
+    const sidebar = screen.getByRole("complementary", { name: "Conversas criadas" });
+    expect(within(sidebar).getAllByRole("button", { name: /Excluir Nova conversa/i })).toHaveLength(2);
+    await user.click(within(sidebar).getAllByRole("button", { name: /Excluir Nova conversa/i })[0]);
+    expect(within(sidebar).getAllByRole("button", { name: /Excluir Nova conversa/i })).toHaveLength(1);
   });
 
   it("ignora HTML e não cria links clicáveis em mensagens salvas", () => {

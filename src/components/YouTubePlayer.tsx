@@ -123,7 +123,7 @@ export function YouTubePlayer({ initialUrl = DEFAULT_YOUTUBE_URL, initialVolume 
         </button>
         <label className="header-volume"><Volume2 size={14} /><span className="sr-only">Volume</span><input type="range" min={0} max={100} value={volume} onChange={(event) => { const next = Number(event.target.value); setVolume(next); onPreferenceChange(source.url, next); }} /></label>
         <button className="header-player-button" type="button" aria-label="Mostrar vídeo oficial" onClick={() => setVideoOpen((open) => !open)}><Video size={15} /></button>
-        <button className="header-player-button" type="button" aria-label="Trocar música" onClick={() => setModalOpen(true)}><Settings2 size={15} /></button>
+        <button className="header-player-button" type="button" aria-label="Trocar música" onClick={() => { playerRef.current?.pauseVideo(); setVideoOpen(false); setModalOpen(true); }}><Settings2 size={15} /></button>
         <div className={`youtube-popover ${videoOpen ? "is-open" : ""}`} aria-hidden={!videoOpen}>
           <div className="youtube-popover-heading"><span><Music2 size={14} /> Player oficial do YouTube</span><button type="button" aria-label="Fechar vídeo e pausar" onClick={() => { playerRef.current?.pauseVideo(); setVideoOpen(false); }}><X size={15} /></button></div>
           <div className="youtube-frame"><div key={source.url} ref={mountRef} /></div>

@@ -1,4 +1,5 @@
 import { useEffect, useRef, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 const modalStack: symbol[] = [];
 
@@ -45,7 +46,8 @@ export function Modal({
 
     const panel = panelRef.current;
     const first = panel?.querySelector<HTMLElement>("[data-autofocus]") ?? panel?.querySelector<HTMLElement>(FOCUSABLE);
-    window.setTimeout(() => first?.focus(), 0);
+    if (panel) panel.scrollTop = 0;
+    window.setTimeout(() => first?.focus({ preventScroll: true }), 0);
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (modalStack.at(-1) !== instance) return;
@@ -83,7 +85,7 @@ export function Modal({
 
   if (!open) return null;
 
-  return (
+  return createPortal(
     <div
       className="modal-backdrop"
       aria-hidden={inactive || undefined}
@@ -101,6 +103,7 @@ export function Modal({
       >
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

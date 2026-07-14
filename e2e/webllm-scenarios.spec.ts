@@ -54,6 +54,8 @@ test("prepara modelo em cache e conclui resposta local", async ({ page }) => {
   await enableMockAI(page, { cached: true, initDelayMs: 250, tokenDelayMs: 10, chunks: ["[[BRIEFING]]Entendi.\n\n1. Qual é o prazo?"] });
   const blocked = await blockExternal(page);
   await page.goto("./");
+  await expect(page.getByText("O modelo local já está disponível neste dispositivo.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Baixar modelo" })).toHaveCount(0);
   await submit(page, "Criar uma campanha");
   await activate(page);
   await expect(page.getByText("Qual é o prazo?")).toBeVisible();

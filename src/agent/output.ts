@@ -39,11 +39,17 @@ function convertJsonToMarkdown(value: string): string | null {
 }
 
 export function parseAgentOutput(raw: string): ParsedAgentOutput {
-  let text = raw.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+  let text = raw.replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, "").trim();
   let stage: AgentStage = "message";
-  if (/^\[\[BRIEFING\]\]/i.test(text)) stage = "briefing";
-  if (/^\[\[PLANO\]\]/i.test(text)) stage = "plan";
-  text = text.replace(/^\s*\[\[(?:BRIEFING|PLANO)\]\]\s*/i, "").trim();
+  const markers = [...text.matchAll(/\[\[(BRIEFING|PLANO)\]\]/gi)];
+  if (markers.length) {
+    const first = markers[0];
+    stage = first[1].toLowerCase() === "briefing" ? "briefing" : "plan";
+    const start = (first.index ?? 0) + first[0].length;
+    const end = markers[1]?.index ?? text.length;
+    text = text.slice(start, end).trim();
+  }
+  text = text.replace(/\[\[(?:BRIEFING|PLANO)\]\]/gi, "").trim();
 
   if (/^(?:\{|\[)/.test(text)) {
     text = convertJsonToMarkdown(text) ?? text;

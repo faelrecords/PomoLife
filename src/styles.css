@@ -115,9 +115,12 @@ button:focus-visible, a:focus-visible, textarea:focus-visible, input:focus-visib
 .sidebar-heading { display: flex; min-height: 48px; padding: 8px 9px 8px 14px; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); color: var(--muted); font-size: .65rem; font-weight: 780; text-transform: uppercase; letter-spacing: .07em; }
 .sidebar-heading > span { display: flex; align-items: center; gap: 7px; }
 .sidebar-conversations { display: grid; align-content: start; gap: 4px; padding: 8px; overflow-y: auto; }
-.sidebar-conversations button { display: grid; width: 100%; gap: 5px; padding: 11px 10px; overflow: hidden; text-align: left; border: 1px solid transparent; border-radius: 3px; color: var(--muted); background: transparent; cursor: pointer; }
-.sidebar-conversations button:hover { color: var(--text); background: rgba(82,120,135,.12); }
-.sidebar-conversations button.is-active { color: var(--text); border-color: rgba(131,194,209,.3); background: rgba(82,120,135,.2); }
+.sidebar-conversation-item { display: grid; grid-template-columns: minmax(0,1fr) 34px; align-items: center; border: 1px solid transparent; border-radius: 3px; color: var(--muted); overflow: hidden; }
+.sidebar-conversation-item:hover { color: var(--text); background: rgba(82,120,135,.12); }
+.sidebar-conversation-item.is-active { color: var(--text); border-color: rgba(131,194,209,.3); background: rgba(82,120,135,.2); }
+.sidebar-conversation-open { display: grid; min-width: 0; width: 100%; gap: 5px; padding: 11px 10px; overflow: hidden; text-align: left; border: 0; color: inherit; background: transparent; cursor: pointer; }
+.sidebar-conversation-delete { display: grid; width: 28px; height: 28px; padding: 0; place-items: center; border: 0; border-radius: 3px; color: var(--dim); background: transparent; cursor: pointer; }
+.sidebar-conversation-delete:hover { color: #ffbcbc; background: rgba(120,42,42,.18); }
 .sidebar-conversations span, .sidebar-conversations small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sidebar-conversations span { font-size: .67rem; font-weight: 730; }
 .sidebar-conversations small { color: var(--dim); font-size: .52rem; }
@@ -141,6 +144,8 @@ button:focus-visible, a:focus-visible, textarea:focus-visible, input:focus-visib
 .local-card { display: flex; gap: 11px; padding: 15px; color: var(--signal); }
 .local-card strong { color: var(--text); font-size: .7rem; }
 .local-card p { margin: 5px 0 0; color: var(--dim); font-size: .6rem; line-height: 1.5; }
+.dependency-card > div { min-width: 0; flex: 1; }
+.dependency-card .button { width: 100%; min-height: 34px; margin-top: 12px; font-size: .6rem; }
 
 .header-player { position: relative; display: flex; height: 42px; margin-left: auto; margin-right: 12px; align-items: center; border: 1px solid var(--line); border-radius: 4px; background: rgba(5,8,9,.58); }
 .header-player-action { display: flex; height: 40px; padding: 0 11px; align-items: center; gap: 9px; border: 0; color: var(--muted); background: transparent; cursor: pointer; }
@@ -215,7 +220,7 @@ button:focus-visible, a:focus-visible, textarea:focus-visible, input:focus-visib
   .sidebar-heading { border-right: 1px solid var(--line); border-bottom: 0; }
   .sidebar-heading > span { display: none; }
   .sidebar-conversations { display: flex; padding: 6px; overflow-x: auto; }
-  .sidebar-conversations button { width: 170px; flex: 0 0 auto; }
+  .sidebar-conversation-item { width: 185px; flex: 0 0 auto; }
   .sidebar-manage { border-top: 0; border-left: 1px solid var(--line); }
   .chat-shell { min-height: calc(100vh - 112px); }
   .chat-messages { max-height: none; min-height: 50vh; }
@@ -240,7 +245,8 @@ button:focus-visible, a:focus-visible, textarea:focus-visible, input:focus-visib
   .chat-sidebar { grid-template-columns: 42px minmax(0,1fr) 42px; }
   .sidebar-heading { min-height: 42px; padding: 5px; }
   .sidebar-manage { width: 42px; padding: 0; font-size: 0; justify-content: center; }
-  .sidebar-conversations button { width: 145px; padding: 8px; }
+  .sidebar-conversation-item { width: 160px; }
+  .sidebar-conversation-open { padding: 8px; }
   .chat-shell { min-height: calc(100vh - 80px); }
   .chat-topbar { min-height: 77px; padding: 16px; }.chat-topbar h1 { font-size: 1.1rem; }.chat-privacy { display: none; }
   .chat-messages { padding: 18px 13px 26px; gap: 17px; }

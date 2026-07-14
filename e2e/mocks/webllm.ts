@@ -1,4 +1,9 @@
-const MODEL_ID = "Qwen3-0.6B-q4f16_1-MLC";
+const MODEL_IDS = [
+  "Qwen3-0.6B-q4f16_1-MLC",
+  "Qwen3.5-0.8B-q4f16_1-MLC",
+  "Qwen3-1.7B-q4f16_1-MLC",
+  "Qwen3-4B-q4f16_1-MLC",
+];
 
 export interface MockWebLLMScenario {
   cached?: boolean;
@@ -35,14 +40,12 @@ function delay(milliseconds: number): Promise<void> {
 }
 
 export const prebuiltAppConfig = {
-  model_list: [
-    {
-      model: `https://huggingface.co/mlc-ai/${MODEL_ID}`,
-      model_id: MODEL_ID,
+  model_list: MODEL_IDS.map((modelId) => ({
+      model: `https://huggingface.co/mlc-ai/${modelId}`,
+      model_id: modelId,
       model_lib: "mock://qwen-model-lib.wasm",
       overrides: { context_window_size: 4_096 },
-    },
-  ],
+    })),
 };
 
 export async function hasModelInCache(modelId: string): Promise<boolean> {

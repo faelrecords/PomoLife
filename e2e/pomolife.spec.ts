@@ -17,12 +17,6 @@ async function sendBasic(page: Page, text: string) {
   if (await consent.isVisible().catch(() => false)) await consent.getByRole("button", { name: "Continuar no modo básico" }).click();
 }
 
-async function openMobileHeaderIfNeeded(page: Page) {
-  if ((page.viewportSize()?.width ?? 1_000) <= 640) {
-    await page.getByRole("button", { name: "Abrir menu" }).click();
-  }
-}
-
 test.beforeEach(async ({ page }) => {
   await withoutWebGPU(page);
   await blockExternalMedia(page);
@@ -35,8 +29,10 @@ test("é servido na raiz como um único chat local", async ({ page }) => {
   await expect(page).toHaveTitle(/PomoLife/);
   await expect(page.getByRole("heading", { name: "Nova conversa" })).toBeVisible();
   await expect(page.getByRole("textbox", { name: "Descreva sua tarefa" })).toBeVisible();
-  await expect(page.getByText("Baixar dependências")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Baixar modelo" })).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Modelo de IA" })).toHaveValue("Qwen3-0.6B-q4f16_1-MLC");
+  await expect(page.getByText("Gerenciar conversas")).toHaveCount(0);
+  await expect(page.getByText("IA não baixada")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Histórico" })).toHaveCount(0);
   await expect(page.locator(".tool-card")).toHaveCount(0);
 });
 
@@ -59,11 +55,7 @@ test("restaura conversas após recarregar", async ({ page }) => {
   await page.goto("./");
   await sendBasic(page, "Organizar relatório mensal");
   await page.reload();
-  await openMobileHeaderIfNeeded(page);
-  await page.getByRole("button", { name: "Histórico" }).click();
-  const history = page.getByRole("dialog", { name: "Conversas" });
-  await expect(history.getByText("Organizar relatório mensal")).toBeVisible();
-  await history.getByText("Organizar relatório mensal").click();
+  await page.getByRole("button", { name: /^Organizar relatório mensal/i }).click();
   await expect(page.getByText(/qual entrega concreta/i)).toBeVisible();
 });
 
@@ -86,8 +78,26 @@ test("mantém chat e player utilizáveis em viewport mobile", async ({ page }) =
   await expect(page.locator(".chat-shell")).toBeVisible();
   await expect(page.getByRole("textbox", { name: "Descreva sua tarefa" })).toBeVisible();
   await expect(page.locator(".header-player")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Configurações" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Abrir menu" })).toHaveCount(0);
   const box = await page.locator(".chat-shell").boundingBox();
   expect(box?.width ?? 0).toBeLessThanOrEqual(390);
+  const selector = await page.getByRole("combobox", { name: "Modelo de IA" }).boundingBox();
+  expect((selector?.x ?? 0) + (selector?.width ?? 0)).toBeLessThanOrEqual(390);
+});
+
+test("mantém laterais simétricas e o chat dentro das margens", async ({ page }) => {
+  await page.setViewportSize({ width: 1627, height: 959 });
+  await page.goto("./");
+  const left = await page.locator(".chat-sidebar").boundingBox();
+  const chat = await page.locator(".chat-shell").boundingBox();
+  const right = await page.locator(".checklist-sidebar").boundingBox();
+  const composer = await page.locator(".chat-composer").boundingBox();
+  expect(Math.abs((left?.width ?? 0) - (right?.width ?? 0))).toBeLessThanOrEqual(1);
+  expect(Math.abs((left?.height ?? 0) - (chat?.height ?? 0))).toBeLessThanOrEqual(2);
+  expect(Math.abs((right?.height ?? 0) - (chat?.height ?? 0))).toBeLessThanOrEqual(2);
+  expect((composer?.x ?? 0) + (composer?.width ?? 0)).toBeLessThanOrEqual((chat?.x ?? 0) + (chat?.width ?? 0));
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 
 test("abre o seletor de música sem recortar o modal nem sobrepor o vídeo", async ({ page }) => {
@@ -104,7 +114,6 @@ test("não apresenta violações críticas de acessibilidade", async ({ page }) 
   await page.goto("./");
   const home = await new AxeBuilder({ page }).analyze();
   expect(home.violations.filter(({ impact }) => impact === "critical")).toEqual([]);
-  await openMobileHeaderIfNeeded(page);
   await page.getByRole("button", { name: "Configurações" }).click();
   const settings = await new AxeBuilder({ page }).include(".settings-modal").analyze();
   expect(settings.violations.filter(({ impact }) => impact === "critical")).toEqual([]);

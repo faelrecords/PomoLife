@@ -38,6 +38,12 @@ describe("agent storage", () => {
     expect(loadAgentState().preferences.youtubeUrl).toBe(DEFAULT_YOUTUBE_URL);
   });
 
+  it("valida e preserva o modelo local selecionado", () => {
+    const state = loadAgentState();
+    saveAgentState({ ...state, preferences: { ...state.preferences, selectedModelId: "Qwen3-1.7B-q4f16_1-MLC" } });
+    expect(loadAgentState().preferences.selectedModelId).toBe("Qwen3-1.7B-q4f16_1-MLC");
+  });
+
   it("apaga o estado novo e os dados legados juntos", () => {
     localStorage.setItem(AGENT_STORAGE_KEY, "{}");
     localStorage.setItem(LEGACY_STORAGE_KEY, "{}");

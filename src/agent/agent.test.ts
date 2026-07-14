@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildAgentPrompt, determineTurnMode, MAX_CONTEXT_CHARACTERS } from "./context";
-import { getPomodoroPreset, parseAgentOutput, parseChecklist } from "./output";
+import { getPomodoroPreset, normalizeAssistantVoice, parseAgentOutput, parseChecklist } from "./output";
 import { selectAgentSkills } from "./skills";
 import type { ChatMessage } from "./types";
 
@@ -54,6 +54,10 @@ describe("agent context and output", () => {
     const prompt = buildAgentPrompt({ messages: [message("u1", "user", "Começar tarefas"), { ...message("a1", "assistant", "Qual tarefa vem primeiro?\n[[PLANO]]Plano genérico antigo"), stage: "briefing" }, message("u2", "user", "Não entendi")], checklist: [] });
     expect(prompt).toContain("Qual tarefa vem primeiro?");
     expect(prompt).not.toContain("Plano genérico antigo");
+  });
+
+  it("mantém a voz do assistente separada da pessoa usuária", () => {
+    expect(normalizeAssistantVoice("Entendo que preciso iniciar minhas tarefas.\nPergunte: O que está pendente?")).toBe("Entendi que você precisa iniciar suas tarefas.\nO que está pendente?");
   });
 
   it("converte JSON inesperado em Markdown em vez de expor o objeto cru", () => {

@@ -3,6 +3,7 @@ import type { PlanRecord } from "../domain";
 import { createId, createIsoNow } from "./ids";
 import { isPomodoroSession, type PomodoroSession } from "./pomodoro";
 import { DEFAULT_YOUTUBE_URL, LEGACY_DEFAULT_YOUTUBE_URL } from "./youtube";
+import { DEFAULT_LOCAL_MODEL_ID, isLocalModelId, type LocalModelId } from "./modelCatalog";
 
 export const AGENT_STORAGE_KEY = "pomolife:agent-state";
 export const LEGACY_STORAGE_KEY = "pomolife:state";
@@ -18,6 +19,7 @@ export interface AgentPreferences {
   soundEnabled: boolean;
   youtubeUrl: string;
   youtubeVolume: number;
+  selectedModelId: LocalModelId;
 }
 
 export interface AgentPersistedState {
@@ -35,6 +37,7 @@ export const DEFAULT_AGENT_PREFERENCES: AgentPreferences = {
   soundEnabled: false,
   youtubeUrl: DEFAULT_YOUTUBE_URL,
   youtubeVolume: 35,
+  selectedModelId: DEFAULT_LOCAL_MODEL_ID,
 };
 
 function storage(): Storage | null {
@@ -130,6 +133,7 @@ export function loadAgentState(storageValue = storage()): AgentPersistedState {
           ? preferences.youtubeUrl
           : DEFAULT_YOUTUBE_URL,
         youtubeVolume: typeof preferences.youtubeVolume === "number" ? Math.max(0, Math.min(100, preferences.youtubeVolume)) : 35,
+        selectedModelId: isLocalModelId(preferences.selectedModelId) ? preferences.selectedModelId : DEFAULT_LOCAL_MODEL_ID,
       },
       pomodoro: isPomodoroSession(parsed.pomodoro) ? parsed.pomodoro : null,
     };

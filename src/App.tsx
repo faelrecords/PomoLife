@@ -10,18 +10,14 @@ import {
 import {
   Bot,
   Check,
-  ChevronRight,
   Copy,
-  Cpu,
   Download,
   History,
-  Menu,
   MessageSquarePlus,
   Orbit,
   Play,
   Send,
   Settings,
-  ShieldCheck,
   Sparkles,
   Square,
   Trash2,
@@ -40,9 +36,6 @@ import {
   type PomodoroPreset,
 } from "./agent";
 import {
-  WEBLLM_ESTIMATED_DOWNLOAD_MB,
-  WEBLLM_ESTIMATED_VRAM_MB,
-  WEBLLM_MODEL_ID,
   type PlannerEngineSnapshot,
 } from "./engine";
 import {
@@ -56,6 +49,7 @@ import {
   type AgentPreferences,
 } from "./lib/chatStorage";
 import { createId, createIsoNow } from "./lib/ids";
+import { getLocalModel, isLocalModelId, LOCAL_MODELS } from "./lib/modelCatalog";
 import { createPomodoroSession, POMODORO_PRESETS, type PomodoroSession } from "./lib/pomodoro";
 import { BlackHoleBackdrop } from "./components/BlackHoleBackdrop";
 import { InteractiveMessage } from "./components/InteractiveMessage";
@@ -74,16 +68,6 @@ function updateSessionList(sessions: ChatSession[], sessionId: string, transform
     .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt));
 }
 
-function engineLabel(snapshot: PlannerEngineSnapshot) {
-  if (snapshot.status === "unsupported") return "IA indisponível";
-  if (snapshot.status === "downloading") return "Baixando IA";
-  if (snapshot.status === "loading") return "Preparando IA";
-  if (snapshot.status === "ready") return "Qwen3 pronto";
-  if (snapshot.status === "generating") return "Pensando localmente";
-  if (snapshot.status === "error") return "IA indisponível";
-  return "IA não baixada";
-}
-
 function emptyGreeting(): ChatMessage {
   return {
     id: "welcome",
@@ -97,19 +81,18 @@ function emptyGreeting(): ChatMessage {
 export default function App() {
   const initial = useRef(loadAgentState()).current;
   const initialSessions = useRef(initial.sessions.length ? initial.sessions : [createChatSession()]).current;
-  const aiEngine = useMemo(() => createWebLLMAgentEngine(), []);
+  const [preferences, setPreferences] = useState(initial.preferences);
+  const aiEngine = useMemo(() => createWebLLMAgentEngine(preferences.selectedModelId), [preferences.selectedModelId]);
   const basicEngine = useMemo(() => createBasicAgentEngine(), []);
   const aiSnapshot = useSyncExternalStore(aiEngine.subscribe, aiEngine.getSnapshot, () => INITIAL_ENGINE_SNAPSHOT);
 
   const [sessions, setSessions] = useState<ChatSession[]>(initialSessions);
   const [activeSessionId, setActiveSessionId] = useState(initial.activeSessionId && initialSessions.some((session) => session.id === initial.activeSessionId) ? initial.activeSessionId : initialSessions[0].id);
-  const [preferences, setPreferences] = useState(initial.preferences);
   const [legacyPlans, setLegacyPlans] = useState(initial.legacyPlans);
   const [pomodoro, setPomodoro] = useState<PomodoroSession | null>(initial.pomodoro);
   const [composer, setComposer] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [consentOpen, setConsentOpen] = useState(false);
-  const [historyOpen, setHistoryOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [pendingText, setPendingText] = useState("");
   const [pendingFocusTask, setPendingFocusTask] = useState("");
@@ -117,12 +100,12 @@ export default function App() {
   const [modelCached, setModelCached] = useState<boolean | "error" | null>(null);
   const [cacheBusy, setCacheBusy] = useState(false);
   const [toast, setToast] = useState("");
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const sessionsRef = useRef(sessions);
   const endRef = useRef<HTMLDivElement>(null);
 
   const activeSession = sessions.find((session) => session.id === activeSessionId) ?? sessions[0];
+  const selectedModel = getLocalModel(preferences.selectedModelId);
   const busy = isGenerating || aiSnapshot.status === "downloading" || aiSnapshot.status === "loading";
 
   useEffect(() => { sessionsRef.current = sessions; }, [sessions]);
@@ -135,10 +118,15 @@ export default function App() {
     const timer = window.setTimeout(() => setToast(""), 3000);
     return () => window.clearTimeout(timer);
   }, [toast]);
-  useEffect(() => () => { abortRef.current?.abort(); void aiEngine.dispose(); void basicEngine.dispose(); }, [aiEngine, basicEngine]);
+  useEffect(() => () => { abortRef.current?.abort(); void aiEngine.dispose(); }, [aiEngine]);
+  useEffect(() => () => { void basicEngine.dispose(); }, [basicEngine]);
   useEffect(() => {
+    let active = true;
     setModelCached(null);
-    void aiEngine.hasModelInCache().then(setModelCached).catch(() => setModelCached("error"));
+    void aiEngine.hasModelInCache()
+      .then((cached) => { if (active) setModelCached(cached); })
+      .catch(() => { if (active) setModelCached("error"); });
+    return () => { active = false; };
   }, [aiEngine]);
 
   const patchPreferences = useCallback((patch: Partial<AgentPreferences>) => {
@@ -149,7 +137,6 @@ export default function App() {
     const session = createChatSession();
     setSessions((current) => [session, ...current].slice(0, 20));
     setActiveSessionId(session.id);
-    setHistoryOpen(false);
     setComposer("");
   };
 
@@ -202,6 +189,21 @@ export default function App() {
     }
   }, [activeSessionId, isGenerating]);
 
+  const prepareAIAndSend = async (text: string) => {
+    try {
+      await aiEngine.initialize();
+      setModelCached(true);
+      patchPreferences({ preferredMode: "ai" });
+      setConsentOpen(false);
+      setPendingText("");
+      await sendThroughEngine(text, aiEngine);
+    } catch {
+      setPendingText(text);
+      setConsentOpen(true);
+      setToast("A IA local não pôde ser carregada. O modo básico continua disponível.");
+    }
+  };
+
   const requestSend = (event?: FormEvent) => {
     event?.preventDefault();
     const text = composer.trim();
@@ -209,21 +211,19 @@ export default function App() {
     if (preferences.preferredMode === "basic" && (aiSnapshot.status === "error" || aiSnapshot.status === "unsupported")) { void sendThroughEngine(text, basicEngine); return; }
     if (aiSnapshot.status === "ready") { void sendThroughEngine(text, aiEngine); return; }
     setPendingText(text);
-    setConsentOpen(true);
+    if (aiSnapshot.status === "unsupported" || aiSnapshot.status === "error") { setConsentOpen(true); return; }
+    if (modelCached === true) { void prepareAIAndSend(text); return; }
+    if (modelCached === false) { setConsentOpen(true); return; }
+    void aiEngine.hasModelInCache().then((cached) => {
+      setModelCached(cached);
+      if (cached) void prepareAIAndSend(text);
+      else setConsentOpen(true);
+    }).catch(() => setConsentOpen(true));
   };
 
   const activateAI = async () => {
-    try {
-      await aiEngine.initialize();
-      setModelCached(true);
-      patchPreferences({ preferredMode: "ai" });
-      setConsentOpen(false);
-      const text = pendingText;
-      setPendingText("");
-      if (text) await sendThroughEngine(text, aiEngine);
-    } catch {
-      setToast("A IA local não pôde ser carregada. O modo básico continua disponível.");
-    }
+    if (navigator.storage?.persist) void navigator.storage.persist().catch(() => false);
+    if (pendingText) await prepareAIAndSend(pendingText);
   };
 
   const selectBasicMode = async () => {
@@ -265,12 +265,6 @@ export default function App() {
     setToast("Resposta copiada.");
   };
 
-  const renameSession = (session: ChatSession) => {
-    const next = window.prompt("Nome da conversa", session.title)?.trim();
-    if (!next) return;
-    setSessions((current) => updateSessionList(current, session.id, (item) => ({ ...item, title: next.slice(0, 80), updatedAt: createIsoNow() })));
-  };
-
   const deleteSession = (sessionId: string) => {
     if (!window.confirm("Excluir esta conversa deste navegador?")) return;
     setSessions((current) => {
@@ -303,13 +297,9 @@ export default function App() {
           <span className="brand-copy"><strong>PomoLife</strong><small>Vibecodex</small></span>
         </a>
         <YouTubePlayer initialUrl={preferences.youtubeUrl} initialVolume={preferences.youtubeVolume} onPreferenceChange={(youtubeUrl, youtubeVolume) => patchPreferences({ youtubeUrl, youtubeVolume })} />
-        <div className={`header-actions ${mobileMenuOpen ? "is-open" : ""}`}>
-          <button className={`engine-status status-${aiSnapshot.status}`} type="button" onClick={() => aiSnapshot.status === "ready" ? setSettingsOpen(true) : setConsentOpen(true)}><span className="signal-dot" /> {engineLabel(aiSnapshot)}</button>
-          <button className="icon-button" type="button" aria-label="Nova conversa" title="Nova conversa" onClick={newConversation}><MessageSquarePlus size={18} /></button>
-          <button className="icon-button" type="button" aria-label="Histórico" title="Histórico" onClick={() => setHistoryOpen(true)}><History size={18} /><span className="button-count">{sessions.length}</span></button>
+        <div className="header-actions">
           <button className="icon-button" type="button" aria-label="Configurações" title="Configurações" onClick={() => setSettingsOpen(true)}><Settings size={18} /></button>
         </div>
-        <button className="icon-button mobile-menu" type="button" aria-label="Abrir menu" onClick={() => setMobileMenuOpen((open) => !open)}><Menu size={19} /></button>
       </header>
 
       <main className="workspace">
@@ -325,12 +315,11 @@ export default function App() {
               </div>
             ))}
           </nav>
-          <button className="sidebar-manage" type="button" onClick={() => setHistoryOpen(true)}>Gerenciar conversas <ChevronRight size={14} /></button>
         </aside>
         <section className="chat-shell" aria-labelledby="chat-title">
           <div className="chat-topbar">
             <div><p className="eyebrow"><span className="signal-dot" /> Coordenador de produtividade</p><h1 id="chat-title">{activeSession?.title ?? "Nova conversa"}</h1></div>
-            <div className="chat-privacy"><ShieldCheck size={15} /><span>Conversa processada neste dispositivo</span></div>
+            <label className="model-selector"><span>Modelo</span><select aria-label="Modelo de IA" value={preferences.selectedModelId} disabled={busy || isGenerating} onChange={(event) => { if (isLocalModelId(event.target.value)) patchPreferences({ selectedModelId: event.target.value, preferredMode: "ask" }); }}>{LOCAL_MODELS.map((model) => <option key={model.id} value={model.id}>{model.name} — {model.recommendedRamGb} GB RAM</option>)}</select></label>
           </div>
 
           <div className="chat-messages" aria-live="polite" aria-busy={isGenerating}>
@@ -383,7 +372,6 @@ export default function App() {
               )) : <p className="empty-checklist">O checklist desta conversa aparecerá depois do briefing.</p>}
             </div>
           </div>
-          <div className="local-card dependency-card"><Cpu size={18} /><div><strong>Baixar dependências</strong><p>{modelCached === true || aiSnapshot.status === "ready" ? "O modelo local já está disponível neste dispositivo." : modelCached === null ? "Verificando os arquivos da IA…" : "Baixe o modelo para usar o planejamento com IA neste navegador."}</p>{modelCached !== true && aiSnapshot.status !== "ready" && <button className="button button-secondary" type="button" disabled={modelCached === null || busy} onClick={() => setConsentOpen(true)}><Download size={14} /> Baixar modelo</button>}</div></div>
         </aside>
       </main>
 
@@ -393,8 +381,8 @@ export default function App() {
         <div className="modal-header"><div className="consent-icon"><Download size={22} /></div><button className="icon-button" type="button" aria-label="Fechar" disabled={busy} onClick={() => setConsentOpen(false)}><X size={18} /></button></div>
         <div className="consent-copy">
           <p className="eyebrow"><span className="signal-dot" /> Primeira mensagem</p><h2 id="consent-title">Baixar a IA local?</h2>
-          <p>O Qwen3 será baixado e executado neste dispositivo. O texto do chat não acompanha esse download.</p>
-          <dl className="model-facts"><div><dt>Download</dt><dd>≈ {WEBLLM_ESTIMATED_DOWNLOAD_MB} MB</dd></div><div><dt>Memória gráfica</dt><dd>≈ {WEBLLM_ESTIMATED_VRAM_MB} MB</dd></div><div><dt>Modelo</dt><dd>Qwen3 · 0.6B</dd></div></dl>
+          <p>O {selectedModel.name} será baixado uma única vez e executado neste dispositivo. Depois, o navegador reutiliza os arquivos salvos.</p>
+          <dl className="model-facts"><div><dt>Download</dt><dd>≈ {selectedModel.downloadMb >= 1_000 ? `${(selectedModel.downloadMb / 1_000).toFixed(2)} GB` : `${selectedModel.downloadMb} MB`}</dd></div><div><dt>Memória recomendada</dt><dd>{selectedModel.recommendedRamGb} GB RAM</dd></div><div><dt>Modelo</dt><dd>{selectedModel.name}</dd></div></dl>
           {(aiSnapshot.status === "downloading" || aiSnapshot.status === "loading") && aiSnapshot.progress && <div className="download-progress"><div className="progress-label"><span>{aiSnapshot.status === "downloading" ? "Baixando modelo" : "Preparando GPU"}</span><strong>{Math.round(aiSnapshot.progress.value * 100)}%</strong></div><div className="progress-track"><span style={{ width: `${aiSnapshot.progress.value * 100}%` }} /></div><small>{aiSnapshot.progress.message}</small></div>}
           {aiSnapshot.status === "unsupported" && <p className="field-error" role="alert">Este navegador não oferece WebGPU para executar o modelo. O modo básico continua disponível.</p>}
           {aiSnapshot.error && <p className="field-error" role="alert">{aiSnapshot.error.message}</p>}
@@ -405,17 +393,10 @@ export default function App() {
         </div>
       </Modal>
 
-      <Modal open={historyOpen} labelledBy="history-title" onClose={() => setHistoryOpen(false)} className="side-modal">
-        <div className="modal-header"><div><p className="eyebrow"><History size={14} /> Somente neste navegador</p><h2 id="history-title">Conversas</h2></div><button className="icon-button" type="button" aria-label="Fechar" onClick={() => setHistoryOpen(false)}><X size={18} /></button></div>
-        <button className="button button-primary full-button" type="button" onClick={newConversation}><MessageSquarePlus size={16} /> Nova conversa</button>
-        <div className="conversation-list">{sessions.map((session) => <article className={`conversation-item ${session.id === activeSessionId ? "is-active" : ""}`} key={session.id}><button type="button" className="conversation-open" onClick={() => { setActiveSessionId(session.id); setHistoryOpen(false); }}><strong>{session.title}</strong><span>{formatDate(session.updatedAt)} · {session.messages.length} mensagens</span></button><div><button type="button" aria-label={`Renomear ${session.title}`} onClick={() => renameSession(session)}>Renomear</button><button type="button" aria-label={`Excluir ${session.title}`} onClick={() => deleteSession(session.id)}><Trash2 size={14} /></button></div></article>)}</div>
-        {legacyPlans.length > 0 && <section className="legacy-plans"><h3>Planos antigos</h3>{legacyPlans.map((plan) => <details key={plan.id}><summary>{plan.promptTitle}<span>{formatDate(plan.createdAt)}</span></summary><pre>{plan.result}</pre></details>)}</section>}
-      </Modal>
-
       <Modal open={settingsOpen} labelledBy="settings-title" onClose={() => setSettingsOpen(false)} className="side-modal settings-modal">
         <div className="modal-header"><div><p className="eyebrow"><Settings size={14} /> Controle local</p><h2 id="settings-title">Configurações</h2></div><button className="icon-button" type="button" aria-label="Fechar" onClick={() => setSettingsOpen(false)}><X size={18} /></button></div>
         <section className="settings-section"><div className="settings-heading"><strong>Pomodoro</strong><p>Alertas funcionam enquanto o site estiver aberto.</p></div><label className="toggle-row"><span><strong>Notificações</strong><small>Check-in no meio e no fim do bloco.</small></span><input type="checkbox" checked={preferences.notificationsEnabled} onChange={(event) => patchPreferences({ notificationsEnabled: event.target.checked })} /><span className="toggle-track"><span /></span></label><label className="toggle-row"><span><strong>Som discreto</strong><small>Um sinal curto nos check-ins.</small></span><input type="checkbox" checked={preferences.soundEnabled} onChange={(event) => patchPreferences({ soundEnabled: event.target.checked })} /><span className="toggle-track"><span /></span></label></section>
-        <section className="settings-section"><div className="settings-heading"><strong>Modelo local</strong><p>{WEBLLM_MODEL_ID}</p></div><span className="cache-status"><span className="signal-dot" /> {modelCached === null ? "Verificando…" : modelCached === true ? "Salvo neste dispositivo" : modelCached === "error" ? "Não foi possível verificar" : "Ainda não baixado"}</span><button className="button button-secondary full-button" type="button" disabled={cacheBusy} onClick={() => void clearModel()}>{cacheBusy ? "Removendo…" : "Remover arquivos da IA"}</button></section>
+        <section className="settings-section"><div className="settings-heading"><strong>Modelo local selecionado</strong><p>{selectedModel.name} · cada modelo é salvo apenas uma vez por navegador e domínio.</p></div><span className="cache-status"><span className="signal-dot" /> {modelCached === null ? "Verificando…" : modelCached === true ? "Salvo neste dispositivo" : modelCached === "error" ? "Não foi possível verificar" : "Ainda não baixado"}</span>{modelCached === true && <button className="button button-secondary full-button" type="button" disabled={cacheBusy} onClick={() => void clearModel()}>{cacheBusy ? "Removendo…" : "Remover modelo selecionado"}</button>}</section>
         <section className="settings-section danger-section"><div className="settings-heading"><strong>Dados deste navegador</strong><p>Apaga conversas, checklists, preferências, planos antigos e timer. O modelo é removido separadamente.</p></div><button className="button button-danger full-button" type="button" onClick={() => { if (window.confirm("Apagar todos os dados locais do PomoLife?")) { clearAgentData(); const replacement = createChatSession(); setSessions([replacement]); setActiveSessionId(replacement.id); setLegacyPlans([]); setPreferences({ ...DEFAULT_AGENT_PREFERENCES }); setPomodoro(null); setSettingsOpen(false); setToast("Dados locais apagados."); } }}><Trash2 size={15} /> Apagar meus dados</button></section>
       </Modal>
 

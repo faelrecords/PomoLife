@@ -138,6 +138,29 @@ describe("WebLLMPlannerEngine", () => {
     expect(streamed).toHaveBeenNthCalledWith(2, "passo", "Primeiro passo");
   });
 
+  it("usa o mesmo modelo selecionado para cache, inicialização e geração", async () => {
+    const selected = "Qwen3-1.7B-q4f16_1-MLC" as const;
+    const { engine: webEngine, runtime } = mockRuntime();
+    runtime.prebuiltAppConfig.model_list.push({
+      model_id: selected,
+      model: "https://example.test/qwen-1.7b",
+      model_lib: "https://example.test/qwen-1.7b.wasm",
+      overrides: { context_window_size: 4_096 },
+    });
+    const planner = new WebLLMPlannerEngine({
+      modelId: selected,
+      detectSupport: vi.fn().mockResolvedValue(true),
+      loadRuntime: vi.fn().mockResolvedValue(runtime as unknown as WebLLMRuntime),
+      createWorker: () => ({ terminate: vi.fn() } as unknown as Worker),
+    });
+    await planner.hasModelInCache();
+    await planner.initialize();
+    await planner.generate(definition, values);
+    expect(runtime.hasModelInCache).toHaveBeenCalledWith(selected, expect.anything());
+    expect(runtime.CreateWebWorkerMLCEngine).toHaveBeenCalledWith(expect.anything(), selected, expect.anything(), expect.anything());
+    expect(webEngine.chat.completions.create).toHaveBeenCalledWith(expect.objectContaining({ model: selected }));
+  });
+
   it("appends the time window calculated by the application", async () => {
     const { runtime } = mockRuntime();
     const planner = new WebLLMPlannerEngine({

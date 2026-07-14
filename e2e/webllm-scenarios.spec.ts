@@ -43,7 +43,7 @@ test("mostra consentimento Qwen3, progresso, streaming e cancelamento", async ({
   await submit(page, "Planejar uma tarefa com detalhes suficientes");
   const consent = page.getByRole("dialog", { name: "Baixar a IA local?" });
   await expect(consent).toContainText("≈ 352 MB");
-  await expect(consent).toContainText("Qwen3 · 0.6B");
+  await expect(consent).toContainText("Qwen3 0.6B");
   await activate(page);
   await expect(page.getByText("Texto em streaming")).toBeVisible();
   await page.getByRole("button", { name: "Parar" }).click();
@@ -54,14 +54,29 @@ test("prepara modelo em cache e conclui resposta local", async ({ page }) => {
   await enableMockAI(page, { cached: true, initDelayMs: 250, tokenDelayMs: 10, chunks: ["[[BRIEFING]]Entendi.\n\n1. Qual é o prazo?"] });
   const blocked = await blockExternal(page);
   await page.goto("./");
-  await expect(page.getByText("O modelo local já está disponível neste dispositivo.")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Baixar modelo" })).toHaveCount(0);
+  await expect.poll(async () => (await events(page)).some((event) => event.type === "has-model-in-cache")).toBe(true);
   await submit(page, "Criar uma campanha");
-  await activate(page);
+  await expect(page.getByRole("dialog", { name: "Baixar a IA local?" })).toHaveCount(0);
   await expect(page.getByText("Qual é o prazo?")).toBeVisible();
   await expect(page.getByText("IA local")).toBeVisible();
   expect(await events(page)).toContainEqual({ type: "has-model-in-cache", detail: expect.objectContaining({ cached: true }) });
   expect(blocked).toEqual([]);
+});
+
+test("persiste a escolha e baixa somente o modelo selecionado", async ({ page }) => {
+  await enableMockAI(page, { initDelayMs: 20, tokenDelayMs: 10, chunks: ["[[BRIEFING]]Entendi.\nQual é a entrega?"] });
+  await blockExternal(page);
+  await page.goto("./");
+  await page.getByRole("combobox", { name: "Modelo de IA" }).selectOption("Qwen3.5-0.8B-q4f16_1-MLC");
+  await page.reload();
+  await expect(page.getByRole("combobox", { name: "Modelo de IA" })).toHaveValue("Qwen3.5-0.8B-q4f16_1-MLC");
+  await submit(page, "Organizar uma entrega");
+  const consent = page.getByRole("dialog", { name: "Baixar a IA local?" });
+  await expect(consent).toContainText("Qwen3.5 0.8B");
+  await expect(consent).toContainText("447 MB");
+  await activate(page);
+  await expect(page.getByText("Qual é a entrega?")).toBeVisible();
+  expect(await events(page)).toContainEqual({ type: "create-engine", detail: expect.objectContaining({ modelId: "Qwen3.5-0.8B-q4f16_1-MLC" }) });
 });
 
 test("oferece modo básico quando o worker falha", async ({ page }) => {

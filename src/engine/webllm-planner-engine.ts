@@ -9,6 +9,7 @@ import {
   calculateRealisticMinutes,
   formatMinutesPtBr,
 } from "../domain";
+import { DEFAULT_LOCAL_MODEL_ID, type LocalModelId } from "../lib/modelCatalog";
 import { EngineStateStore } from "./state-store";
 import {
   PlannerEngineError,
@@ -20,7 +21,7 @@ import {
   type PlannerGenerationResult,
 } from "./types";
 
-export const WEBLLM_MODEL_ID = "Qwen3-0.6B-q4f16_1-MLC";
+export const WEBLLM_MODEL_ID = DEFAULT_LOCAL_MODEL_ID;
 export const WEBLLM_CONTEXT_WINDOW_SIZE = 4_096;
 export const WEBLLM_ESTIMATED_DOWNLOAD_MB = 352;
 export const WEBLLM_ESTIMATED_VRAM_MB = 1_403;
@@ -41,6 +42,7 @@ export interface WebLLMPlannerEngineOptions {
   loadRuntime?: () => Promise<WebLLMRuntime>;
   createWorker?: () => Worker;
   detectSupport?: () => Promise<boolean>;
+  modelId?: LocalModelId;
 }
 
 interface NavigatorGPU {
@@ -190,9 +192,9 @@ function normalizeError(
   );
 }
 
-export function createWebLLMAppConfig(runtime: WebLLMRuntime): AppConfig {
+export function createWebLLMAppConfig(runtime: WebLLMRuntime, modelId: LocalModelId = DEFAULT_LOCAL_MODEL_ID): AppConfig {
   const source = runtime.prebuiltAppConfig.model_list.find(
-    (model) => model.model_id === WEBLLM_MODEL_ID,
+    (model) => model.model_id === modelId,
   );
 
   if (!source) {
@@ -226,6 +228,7 @@ export class WebLLMPlannerEngine implements PlannerEngine {
   private readonly loadRuntime: () => Promise<WebLLMRuntime>;
   private readonly createWorker: () => Worker;
   private readonly detectSupport: () => Promise<boolean>;
+  private readonly modelId: LocalModelId;
   private runtime?: WebLLMRuntime;
   private engine?: WebWorkerMLCEngine;
   private worker?: Worker;
@@ -250,6 +253,7 @@ export class WebLLMPlannerEngine implements PlannerEngine {
           name: "pomolife-webllm",
         }));
     this.detectSupport = options.detectSupport ?? detectWebGPUSupport;
+    this.modelId = options.modelId ?? DEFAULT_LOCAL_MODEL_ID;
   }
 
   getSnapshot = this.state.getSnapshot;
@@ -288,10 +292,10 @@ export class WebLLMPlannerEngine implements PlannerEngine {
     try {
       if (this.engine || this.worker) await this.releaseModel();
       const runtime = await this.getRuntime();
-      const appConfig = createWebLLMAppConfig(runtime);
+      const appConfig = createWebLLMAppConfig(runtime, this.modelId);
       let fromCache = false;
       try {
-        fromCache = await runtime.hasModelInCache(WEBLLM_MODEL_ID, appConfig);
+        fromCache = await runtime.hasModelInCache(this.modelId, appConfig);
       } catch {
         // A cache check must not prevent a fresh model download.
       }
@@ -313,7 +317,7 @@ export class WebLLMPlannerEngine implements PlannerEngine {
       let operationCancelled = false;
       const creation = runtime.CreateWebWorkerMLCEngine(
         worker,
-        WEBLLM_MODEL_ID,
+        this.modelId,
         {
           appConfig,
           initProgressCallback: (report) => this.handleProgress(report, fromCache),
@@ -470,7 +474,7 @@ export class WebLLMPlannerEngine implements PlannerEngine {
           { role: "system", content: SYSTEM_PROMPT },
           { role: "user", content: preparedPrompt },
         ],
-        model: WEBLLM_MODEL_ID,
+        model: this.modelId,
         stream: true,
         temperature: definition.generation.temperature,
         max_tokens: definition.generation.maxTokens,
@@ -574,8 +578,8 @@ export class WebLLMPlannerEngine implements PlannerEngine {
     try {
       const runtime = await this.getRuntime();
       return await runtime.hasModelInCache(
-        WEBLLM_MODEL_ID,
-        createWebLLMAppConfig(runtime),
+        this.modelId,
+        createWebLLMAppConfig(runtime, this.modelId),
       );
     } catch (cause) {
       throw normalizeError(cause, "cache");
@@ -588,8 +592,8 @@ export class WebLLMPlannerEngine implements PlannerEngine {
       await this.releaseModel();
       const runtime = await this.getRuntime();
       await runtime.deleteModelAllInfoInCache(
-        WEBLLM_MODEL_ID,
-        createWebLLMAppConfig(runtime),
+        this.modelId,
+        createWebLLMAppConfig(runtime, this.modelId),
       );
       this.state.update(initialSnapshot());
     } catch (cause) {
@@ -691,7 +695,7 @@ export class WebLLMPlannerEngine implements PlannerEngine {
             content: `Compacte o trecho ${index + 1} de ${chunks.length} em uma lista curta, sem perder pendências distintas. Uma pendência por linha.\n\nTRECHO (JSON):\n${JSON.stringify(chunk)}`,
           },
         ],
-        model: WEBLLM_MODEL_ID,
+        model: this.modelId,
         stream: false,
         temperature: 0.1,
         max_tokens: BRAIN_DUMP_SUMMARY_TOKENS,

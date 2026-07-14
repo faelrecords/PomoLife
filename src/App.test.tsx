@@ -26,6 +26,11 @@ describe("PomoLife agent", () => {
     expect(screen.getByRole("textbox", { name: "Descreva sua tarefa" })).toBeVisible();
     expect(screen.queryByText("Cardápio de dopamina")).not.toBeInTheDocument();
     expect(screen.getByText(/briefing curto/i)).toBeVisible();
+    expect(screen.getByRole("combobox", { name: "Modelo de IA" })).toHaveValue("Qwen3-0.6B-q4f16_1-MLC");
+    expect(screen.getByRole("option", { name: "Qwen3 1.7B — 4 GB RAM" })).toBeVisible();
+    expect(screen.queryByText("IA não baixada")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Histórico" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Gerenciar conversas")).not.toBeInTheDocument();
   });
 
   it("oferece consentimento e faz briefing no modo básico", async () => {
@@ -56,12 +61,17 @@ describe("PomoLife agent", () => {
     expect(screen.getAllByRole("button", { name: /iniciar foco em/i }).length).toBeGreaterThan(0);
   });
 
-  it("cria e retoma várias conversas locais", async () => {
+  it("cria várias conversas somente pela barra lateral", async () => {
     const { user } = renderApp();
-    await user.click(screen.getByRole("button", { name: "Nova conversa" }));
-    await user.click(screen.getByRole("button", { name: "Histórico" }));
-    const dialog = screen.getByRole("dialog", { name: "Conversas" });
-    expect(dialog.querySelectorAll(".conversation-item")).toHaveLength(2);
+    await user.click(screen.getByRole("button", { name: "Criar conversa" }));
+    const sidebar = screen.getByRole("complementary", { name: "Conversas criadas" });
+    expect(sidebar.querySelectorAll(".sidebar-conversation-item")).toHaveLength(2);
+  });
+
+  it("persiste o modelo escolhido no dropdown", async () => {
+    const { user } = renderApp();
+    await user.selectOptions(screen.getByRole("combobox", { name: "Modelo de IA" }), "Qwen3.5-0.8B-q4f16_1-MLC");
+    await waitFor(() => expect(loadAgentState().preferences.selectedModelId).toBe("Qwen3.5-0.8B-q4f16_1-MLC"));
   });
 
   it("troca a checklist junto com a conversa de origem", async () => {
@@ -84,7 +94,7 @@ describe("PomoLife agent", () => {
   it("exclui uma conversa diretamente pela barra lateral", async () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
     const { user } = renderApp();
-    await user.click(screen.getByRole("button", { name: "Nova conversa" }));
+    await user.click(screen.getByRole("button", { name: "Criar conversa" }));
     const sidebar = screen.getByRole("complementary", { name: "Conversas criadas" });
     expect(within(sidebar).getAllByRole("button", { name: /Excluir Nova conversa/i })).toHaveLength(2);
     await user.click(within(sidebar).getAllByRole("button", { name: /Excluir Nova conversa/i })[0]);

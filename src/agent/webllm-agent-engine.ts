@@ -1,6 +1,7 @@
 import type { FormValues, PromptDefinition } from "../domain";
 import { createWebLLMPlannerEngine, type PlannerEngine } from "../engine";
 import { buildAgentPrompt } from "./context";
+import type { LocalModelId } from "../lib/modelCatalog";
 import type { AgentEngine, AgentGenerationOptions, AgentRequest } from "./types";
 
 function coordinatorDefinition(prompt: string): PromptDefinition {
@@ -39,6 +40,6 @@ export class WebLLMAgentEngine implements AgentEngine {
   }
 }
 
-export function createWebLLMAgentEngine() {
-  return new WebLLMAgentEngine();
+export function createWebLLMAgentEngine(modelId?: LocalModelId) {
+  return new WebLLMAgentEngine(createWebLLMPlannerEngine({ modelId }));
 }

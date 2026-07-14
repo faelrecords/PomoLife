@@ -38,6 +38,16 @@ function convertJsonToMarkdown(value: string): string | null {
   }
 }
 
+export function normalizeAssistantVoice(value: string): string {
+  return value
+    .replace(/\bEntendo que preciso\b/gi, "Entendi que você precisa")
+    .replace(/\bEntendo que quero\b/gi, "Entendi que você quer")
+    .replace(/\bEntendo que estou\b/gi, "Entendi que você está")
+    .replace(/\bminhas tarefas\b/gi, "suas tarefas")
+    .replace(/^\s*Pergunte:\s*/gim, "")
+    .trim();
+}
+
 export function parseAgentOutput(raw: string): ParsedAgentOutput {
   let text = raw.replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, "").trim();
   let stage: AgentStage = "message";
@@ -54,7 +64,7 @@ export function parseAgentOutput(raw: string): ParsedAgentOutput {
   if (/^(?:\{|\[)/.test(text)) {
     text = convertJsonToMarkdown(text) ?? text;
   }
-  return { text, stage };
+  return { text: normalizeAssistantVoice(text), stage };
 }
 
 export function parseChecklist(messageId: string, markdown: string): ChecklistItem[] {

@@ -2,11 +2,18 @@ import { describe, expect, it } from "vitest";
 import { buildAgentPrompt, determineTurnMode, MAX_ATTACHMENT_CONTEXT_CHARACTERS, MAX_CONTEXT_CHARACTERS } from "./context";
 import { getPomodoroPreset, normalizeAssistantVoice, parseAgentOutput, parseChecklist } from "./output";
 import { isProductivityRequest, selectAgentSkills } from "./skills";
+import { getAgentTokenBudget } from "./webllm-agent-engine";
 import type { ChatMessage } from "./types";
 
 const message = (id: string, role: ChatMessage["role"], content: string): ChatMessage => ({ id, role, content, createdAt: "2026-07-14T12:00:00.000Z" });
 
 describe("agent context and output", () => {
+  it("usa respostas curtas por padrão e reserva mais tokens somente para planos", () => {
+    expect(getAgentTokenBudget("briefing")).toBeLessThan(getAgentTokenBudget("productivity"));
+    expect(getAgentTokenBudget("general")).toBeLessThan(getAgentTokenBudget("plan"));
+    expect(getAgentTokenBudget("clarify")).toBe(100);
+  });
+
   it("preserva a primeira solicitação, limita o contexto e trata conteúdo como dado", () => {
     const messages = [message("first", "user", "Criar oito carrosséis"), ...Array.from({ length: 12 }, (_, index) => message(`m${index}`, index % 2 ? "assistant" : "user", `conteúdo ${index} ${"x".repeat(1500)}`))];
     const prompt = buildAgentPrompt({ messages, checklist: [] });

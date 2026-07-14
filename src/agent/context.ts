@@ -1,8 +1,11 @@
 import { COORDINATOR_PROMPT, hasPendingProductivityBriefing, isProductivityRequest, selectAgentSkills } from "./skills";
 import type { AgentRequest, ChatMessage } from "./types";
 
-export const MAX_CONTEXT_CHARACTERS = 7_000;
-export const MAX_RECENT_MESSAGES = 6;
+// A smaller prompt reaches the first token faster on integrated GPUs. The
+// opening request is still preserved, while only the most useful recent turns
+// are sent back to the model.
+export const MAX_CONTEXT_CHARACTERS = 4_500;
+export const MAX_RECENT_MESSAGES = 4;
 export const MAX_ATTACHMENT_CONTEXT_CHARACTERS = 3_000;
 export type AgentTurnMode = "general" | "productivity" | "briefing" | "plan" | "clarify";
 
@@ -10,7 +13,7 @@ function messageBlock(message: ChatMessage): string {
   const stage = message.stage === "briefing" ? " — briefing já realizado" : "";
   const role = message.role === "user" ? "PESSOA" : `POMOLIFE${stage}`;
   const withoutLegacyTail = message.role === "assistant" ? message.content.split(/\[\[(?:BRIEFING|PLANO)\]\]/i)[0] : message.content;
-  const contentLimit = message.role === "assistant" ? 1_200 : message.attachments?.length ? 1_000 : 2_000;
+  const contentLimit = message.role === "assistant" ? 850 : message.attachments?.length ? 900 : 1_400;
   const content = withoutLegacyTail.trim().slice(0, contentLimit);
   let remainingAttachmentCharacters = MAX_ATTACHMENT_CONTEXT_CHARACTERS;
   const attachments = message.role === "user" ? (message.attachments ?? []).flatMap((attachment) => {
@@ -60,7 +63,7 @@ export function buildAgentPrompt(request: AgentRequest): string {
   const conversation = [firstBlock, recentBlocks.slice(-recentBudget)].filter(Boolean).join("\n\n");
   const mode = determineTurnMode(messages);
   const checklist = mode !== "general" && request.checklist.length
-    ? request.checklist.map((item) => `- [${item.completed ? "x" : " "}] ${JSON.stringify(item.text)}`).join("\n").slice(-1_200)
+    ? request.checklist.map((item) => `- [${item.completed ? "x" : " "}] ${JSON.stringify(item.text)}`).join("\n").slice(-700)
     : "Nenhum checklist ativo.";
   const specialists = selectAgentSkills(messages).map((skill) => `- ${skill.title}: ${skill.instruction}`).join("\n");
   const specialistSection = specialists ? `\n\nESPECIALISTAS ROTEADOS\n${specialists}` : "";

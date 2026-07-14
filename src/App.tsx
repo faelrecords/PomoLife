@@ -112,6 +112,7 @@ export default function App() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const sessionsRef = useRef(sessions);
   const endRef = useRef<HTMLDivElement>(null);
+  const warmedEngineRef = useRef<AgentEngine | null>(null);
 
   const activeSession = sessions.find((session) => session.id === activeSessionId) ?? sessions[0];
   const selectedModel = getLocalModel(preferences.selectedModelId);
@@ -145,6 +146,16 @@ export default function App() {
       .catch(() => { if (active) setModelCached("error"); });
     return () => { active = false; };
   }, [aiEngine]);
+  useEffect(() => {
+    if (modelCached !== true || aiSnapshot.status !== "idle" || warmedEngineRef.current === aiEngine) return;
+    const timer = window.setTimeout(() => {
+      warmedEngineRef.current = aiEngine;
+      void aiEngine.initialize().catch(() => {
+        if (warmedEngineRef.current === aiEngine) warmedEngineRef.current = null;
+      });
+    }, 900);
+    return () => window.clearTimeout(timer);
+  }, [aiEngine, aiSnapshot.status, modelCached]);
 
   const patchPreferences = useCallback((patch: Partial<AgentPreferences>) => {
     setPreferences((current) => ({ ...current, ...patch }));

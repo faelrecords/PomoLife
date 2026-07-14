@@ -1,10 +1,22 @@
 import type { FormValues, PromptDefinition } from "../domain";
 import { createWebLLMPlannerEngine, type PlannerEngine } from "../engine";
-import { buildAgentPrompt } from "./context";
+import { buildAgentPrompt, determineTurnMode, type AgentTurnMode } from "./context";
 import type { LocalModelId } from "../lib/modelCatalog";
 import type { AgentEngine, AgentGenerationOptions, AgentRequest } from "./types";
 
-function coordinatorDefinition(prompt: string): PromptDefinition {
+const TOKEN_BUDGET_BY_MODE: Record<AgentTurnMode, number> = {
+  general: 220,
+  productivity: 240,
+  briefing: 140,
+  plan: 340,
+  clarify: 100,
+};
+
+export function getAgentTokenBudget(mode: AgentTurnMode): number {
+  return TOKEN_BUDGET_BY_MODE[mode];
+}
+
+function coordinatorDefinition(prompt: string, mode: AgentTurnMode): PromptDefinition {
   return {
     id: "paralysis",
     number: "01",
@@ -12,7 +24,7 @@ function coordinatorDefinition(prompt: string): PromptDefinition {
     title: "Assistente PomoLife",
     description: "",
     fields: [],
-    generation: { temperature: 0.12, maxTokens: 420 },
+    generation: { temperature: 0.1, maxTokens: getAgentTokenBudget(mode) },
     validate: () => ({}),
     buildPrompt: () => prompt,
     createFallback: () => "",
@@ -35,8 +47,9 @@ export class WebLLMAgentEngine implements AgentEngine {
   clearModelCache() { return this.delegate.clearModelCache(); }
   dispose() { return this.delegate.dispose(); }
   async sendMessage(request: AgentRequest, options: AgentGenerationOptions = {}) {
+    const mode = determineTurnMode(request.messages);
     const prompt = buildAgentPrompt(request);
-    return this.delegate.generate(coordinatorDefinition(prompt), {} as FormValues, options);
+    return this.delegate.generate(coordinatorDefinition(prompt, mode), {} as FormValues, options);
   }
 }
 

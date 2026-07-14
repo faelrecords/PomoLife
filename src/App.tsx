@@ -10,6 +10,7 @@ import {
 import {
   Bot,
   Check,
+  ChevronRight,
   Copy,
   Cpu,
   Download,
@@ -73,15 +74,14 @@ function updateSessionList(sessions: ChatSession[], sessionId: string, transform
     .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt));
 }
 
-function engineLabel(snapshot: PlannerEngineSnapshot, preferences: AgentPreferences) {
-  if (snapshot.status === "unsupported") return "Modo básico";
+function engineLabel(snapshot: PlannerEngineSnapshot) {
+  if (snapshot.status === "unsupported") return "IA indisponível";
   if (snapshot.status === "downloading") return "Baixando IA";
   if (snapshot.status === "loading") return "Preparando IA";
   if (snapshot.status === "ready") return "Qwen3 pronto";
   if (snapshot.status === "generating") return "Pensando localmente";
   if (snapshot.status === "error") return "IA indisponível";
-  if (preferences.preferredMode === "basic") return "Modo básico";
-  return "IA sob demanda";
+  return "IA não baixada";
 }
 
 function emptyGreeting(): ChatMessage {
@@ -207,7 +207,7 @@ export default function App() {
     event?.preventDefault();
     const text = composer.trim();
     if (!text || busy) return;
-    if (preferences.preferredMode === "basic") { void sendThroughEngine(text, basicEngine); return; }
+    if (preferences.preferredMode === "basic" && (aiSnapshot.status === "error" || aiSnapshot.status === "unsupported")) { void sendThroughEngine(text, basicEngine); return; }
     if (aiSnapshot.status === "ready") { void sendThroughEngine(text, aiEngine); return; }
     setPendingText(text);
     setConsentOpen(true);
@@ -300,10 +300,11 @@ export default function App() {
       <header className="site-header">
         <a className="brand-lockup" href={import.meta.env.BASE_URL} aria-label="PomoLife, início">
           <span className="brand-mark"><Orbit size={22} strokeWidth={1.5} /></span>
-          <span className="brand-copy"><strong>PomoLife</strong><small>Agente local · Vibecodex</small></span>
+          <span className="brand-copy"><strong>PomoLife</strong><small>Vibecodex</small></span>
         </a>
+        <YouTubePlayer initialUrl={preferences.youtubeUrl} initialVolume={preferences.youtubeVolume} onPreferenceChange={(youtubeUrl, youtubeVolume) => patchPreferences({ youtubeUrl, youtubeVolume })} />
         <div className={`header-actions ${mobileMenuOpen ? "is-open" : ""}`}>
-          <button className={`engine-status status-${aiSnapshot.status}`} type="button" onClick={() => setSettingsOpen(true)}><span className="signal-dot" /> {engineLabel(aiSnapshot, preferences)}</button>
+          <button className={`engine-status status-${aiSnapshot.status}`} type="button" onClick={() => aiSnapshot.status === "ready" ? setSettingsOpen(true) : setConsentOpen(true)}><span className="signal-dot" /> {engineLabel(aiSnapshot)}</button>
           <button className="icon-button" type="button" aria-label="Nova conversa" title="Nova conversa" onClick={newConversation}><MessageSquarePlus size={18} /></button>
           <button className="icon-button" type="button" aria-label="Histórico" title="Histórico" onClick={() => setHistoryOpen(true)}><History size={18} /><span className="button-count">{sessions.length}</span></button>
           <button className="icon-button" type="button" aria-label="Configurações" title="Configurações" onClick={() => setSettingsOpen(true)}><Settings size={18} /></button>
@@ -312,6 +313,17 @@ export default function App() {
       </header>
 
       <main className="workspace">
+        <aside className="chat-sidebar" aria-label="Conversas criadas">
+          <div className="sidebar-heading"><span><History size={14} /> Conversas</span><button className="icon-button icon-button-small" type="button" aria-label="Criar conversa" onClick={newConversation}><MessageSquarePlus size={15} /></button></div>
+          <nav className="sidebar-conversations">
+            {sessions.map((session) => (
+              <button key={session.id} type="button" className={session.id === activeSessionId ? "is-active" : ""} onClick={() => setActiveSessionId(session.id)}>
+                <span>{session.title}</span><small>{session.messages.length} mensagens</small>
+              </button>
+            ))}
+          </nav>
+          <button className="sidebar-manage" type="button" onClick={() => setHistoryOpen(true)}>Gerenciar conversas <ChevronRight size={14} /></button>
+        </aside>
         <section className="chat-shell" aria-labelledby="chat-title">
           <div className="chat-topbar">
             <div><p className="eyebrow"><span className="signal-dot" /> Coordenador de produtividade</p><h1 id="chat-title">{activeSession?.title ?? "Nova conversa"}</h1></div>
@@ -355,13 +367,19 @@ export default function App() {
           </form>
         </section>
 
-        <aside className="workspace-sidebar">
-          <div className="progress-card">
-            <div className="progress-heading"><span><Check size={15} /> Progresso atual</span><strong>{activeSession?.checklist.filter((item) => item.completed).length ?? 0}/{activeSession?.checklist.length ?? 0}</strong></div>
+        <aside className="checklist-sidebar" aria-label={`Checklist de ${activeSession?.title ?? "conversa atual"}`}>
+          <div className="checklist-panel">
+            <div className="progress-heading"><span><Check size={15} /> Checklist</span><strong>{activeSession?.checklist.filter((item) => item.completed).length ?? 0}/{activeSession?.checklist.length ?? 0}</strong></div>
             <div className="progress-track"><span style={{ width: `${activeSession?.checklist.length ? (activeSession.checklist.filter((item) => item.completed).length / activeSession.checklist.length) * 100 : 0}%` }} /></div>
-            <p>{activeSession?.checklist.length ? "Marque as microtarefas conforme avançar." : "O checklist aparecerá depois do briefing."}</p>
+            <div className="sidebar-checklist">
+              {activeSession?.checklist.length ? activeSession.checklist.map((item) => (
+                <div className={item.completed ? "is-complete" : ""} key={item.id}>
+                  <label><input type="checkbox" checked={item.completed} onChange={() => toggleChecklist(item.id)} /><span>{item.text}</span></label>
+                  <button className="sidebar-task-start" type="button" aria-label={`Focar em ${item.text}`} onClick={() => prepareFocus(item.text)}><Play size={13} /></button>
+                </div>
+              )) : <p className="empty-checklist">O checklist desta conversa aparecerá depois do briefing.</p>}
+            </div>
           </div>
-          <YouTubePlayer initialUrl={preferences.youtubeUrl} initialVolume={preferences.youtubeVolume} onPreferenceChange={(youtubeUrl, youtubeVolume) => patchPreferences({ youtubeUrl, youtubeVolume })} />
           <div className="local-card"><Cpu size={18} /><div><strong>Privado por arquitetura</strong><p>Suas tarefas não são enviadas. O YouTube recebe dados técnicos do player.</p></div></div>
         </aside>
       </main>
@@ -371,12 +389,16 @@ export default function App() {
       <Modal open={consentOpen} labelledBy="consent-title" onClose={() => { if (!busy) setConsentOpen(false); }} className="compact-modal consent-modal">
         <div className="modal-header"><div className="consent-icon"><Download size={22} /></div><button className="icon-button" type="button" aria-label="Fechar" disabled={busy} onClick={() => setConsentOpen(false)}><X size={18} /></button></div>
         <div className="consent-copy">
-          <p className="eyebrow"><span className="signal-dot" /> Primeira ativação</p><h2 id="consent-title">Ativar o coordenador local?</h2>
+          <p className="eyebrow"><span className="signal-dot" /> Primeira mensagem</p><h2 id="consent-title">Baixar a IA local?</h2>
           <p>O Qwen3 será baixado e executado neste dispositivo. O texto do chat não acompanha esse download.</p>
           <dl className="model-facts"><div><dt>Download</dt><dd>≈ {WEBLLM_ESTIMATED_DOWNLOAD_MB} MB</dd></div><div><dt>Memória gráfica</dt><dd>≈ {WEBLLM_ESTIMATED_VRAM_MB} MB</dd></div><div><dt>Modelo</dt><dd>Qwen3 · 0.6B</dd></div></dl>
           {(aiSnapshot.status === "downloading" || aiSnapshot.status === "loading") && aiSnapshot.progress && <div className="download-progress"><div className="progress-label"><span>{aiSnapshot.status === "downloading" ? "Baixando modelo" : "Preparando GPU"}</span><strong>{Math.round(aiSnapshot.progress.value * 100)}%</strong></div><div className="progress-track"><span style={{ width: `${aiSnapshot.progress.value * 100}%` }} /></div><small>{aiSnapshot.progress.message}</small></div>}
+          {aiSnapshot.status === "unsupported" && <p className="field-error" role="alert">Este navegador não oferece WebGPU para executar o modelo. O modo básico continua disponível.</p>}
           {aiSnapshot.error && <p className="field-error" role="alert">{aiSnapshot.error.message}</p>}
-          <div className="dialog-actions"><button className="button button-primary" type="button" onClick={() => void activateAI()} disabled={busy}><Download size={16} /> {busy ? "Preparando…" : "Ativar IA local"}</button><button className="button button-secondary" type="button" onClick={() => void selectBasicMode()}>Usar modo básico</button></div>
+          <div className="dialog-actions">
+            {aiSnapshot.status !== "unsupported" && <button className="button button-primary" type="button" onClick={() => void activateAI()} disabled={busy}><Download size={16} /> {busy ? "Preparando…" : "Baixar e ativar IA"}</button>}
+            {(aiSnapshot.status === "error" || aiSnapshot.status === "unsupported") && <button className="button button-secondary" type="button" onClick={() => void selectBasicMode()}>Continuar no modo básico</button>}
+          </div>
         </div>
       </Modal>
 
@@ -389,7 +411,6 @@ export default function App() {
 
       <Modal open={settingsOpen} labelledBy="settings-title" onClose={() => setSettingsOpen(false)} className="side-modal settings-modal">
         <div className="modal-header"><div><p className="eyebrow"><Settings size={14} /> Controle local</p><h2 id="settings-title">Configurações</h2></div><button className="icon-button" type="button" aria-label="Fechar" onClick={() => setSettingsOpen(false)}><X size={18} /></button></div>
-        <section className="settings-section"><div className="settings-heading"><strong>Modo de resposta</strong><p>Escolha como o chat deve processar suas mensagens.</p></div><div className="segmented-control">{(["ask", "ai", "basic"] as const).map((mode) => <button key={mode} type="button" className={preferences.preferredMode === mode ? "is-selected" : ""} onClick={() => patchPreferences({ preferredMode: mode })}>{mode === "ask" ? "Perguntar" : mode === "ai" ? "IA local" : "Básico"}</button>)}</div></section>
         <section className="settings-section"><div className="settings-heading"><strong>Pomodoro</strong><p>Alertas funcionam enquanto o site estiver aberto.</p></div><label className="toggle-row"><span><strong>Notificações</strong><small>Check-in no meio e no fim do bloco.</small></span><input type="checkbox" checked={preferences.notificationsEnabled} onChange={(event) => patchPreferences({ notificationsEnabled: event.target.checked })} /><span className="toggle-track"><span /></span></label><label className="toggle-row"><span><strong>Som discreto</strong><small>Um sinal curto nos check-ins.</small></span><input type="checkbox" checked={preferences.soundEnabled} onChange={(event) => patchPreferences({ soundEnabled: event.target.checked })} /><span className="toggle-track"><span /></span></label></section>
         <section className="settings-section"><div className="settings-heading"><strong>Modelo local</strong><p>{WEBLLM_MODEL_ID}</p></div><span className="cache-status"><span className="signal-dot" /> {modelCached === null ? "Verificando…" : modelCached === true ? "Salvo neste dispositivo" : modelCached === "error" ? "Não foi possível verificar" : "Ainda não baixado"}</span><button className="button button-secondary full-button" type="button" disabled={cacheBusy} onClick={() => void clearModel()}>{cacheBusy ? "Removendo…" : "Remover arquivos da IA"}</button></section>
         <section className="settings-section danger-section"><div className="settings-heading"><strong>Dados deste navegador</strong><p>Apaga conversas, checklists, preferências, planos antigos e timer. O modelo é removido separadamente.</p></div><button className="button button-danger full-button" type="button" onClick={() => { if (window.confirm("Apagar todos os dados locais do PomoLife?")) { clearAgentData(); const replacement = createChatSession(); setSessions([replacement]); setActiveSessionId(replacement.id); setLegacyPlans([]); setPreferences({ ...DEFAULT_AGENT_PREFERENCES }); setPomodoro(null); setSettingsOpen(false); setToast("Dados locais apagados."); } }}><Trash2 size={15} /> Apagar meus dados</button></section>

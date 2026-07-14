@@ -27,9 +27,9 @@ async function submit(page: Page, text: string) {
 }
 
 async function activate(page: Page) {
-  const consent = page.getByRole("dialog", { name: "Ativar o coordenador local?" });
+  const consent = page.getByRole("dialog", { name: "Baixar a IA local?" });
   await expect(consent).toBeVisible();
-  await consent.getByRole("button", { name: "Ativar IA local" }).click();
+  await consent.getByRole("button", { name: "Baixar e ativar IA" }).click();
 }
 
 async function events(page: Page): Promise<MockEvent[]> {
@@ -41,7 +41,7 @@ test("mostra consentimento Qwen3, progresso, streaming e cancelamento", async ({
   const blocked = await blockExternal(page);
   await page.goto("./");
   await submit(page, "Planejar uma tarefa com detalhes suficientes");
-  const consent = page.getByRole("dialog", { name: "Ativar o coordenador local?" });
+  const consent = page.getByRole("dialog", { name: "Baixar a IA local?" });
   await expect(consent).toContainText("≈ 352 MB");
   await expect(consent).toContainText("Qwen3 · 0.6B");
   await activate(page);
@@ -68,9 +68,9 @@ test("oferece modo básico quando o worker falha", async ({ page }) => {
   await page.goto("./");
   await submit(page, "Organizar projeto");
   await activate(page);
-  const consent = page.getByRole("dialog", { name: "Ativar o coordenador local?" });
+  const consent = page.getByRole("dialog", { name: "Baixar a IA local?" });
   await expect(consent.getByRole("alert")).toContainText("processo local da IA foi interrompido");
-  await consent.getByRole("button", { name: "Usar modo básico" }).click();
+  await consent.getByRole("button", { name: "Continuar no modo básico" }).click();
   await expect(page.getByText(/qual entrega concreta/i)).toBeVisible();
 });
 
@@ -80,9 +80,9 @@ test("explica falta de memória e mantém fallback", async ({ page }) => {
   await page.goto("./");
   await submit(page, "Organizar projeto");
   await activate(page);
-  const consent = page.getByRole("dialog", { name: "Ativar o coordenador local?" });
+  const consent = page.getByRole("dialog", { name: "Baixar a IA local?" });
   await expect(consent.getByRole("alert")).toContainText("memória gráfica suficiente");
-  await expect(consent.getByRole("button", { name: "Usar modo básico" })).toBeEnabled();
+  await expect(consent.getByRole("button", { name: "Continuar no modo básico" })).toBeEnabled();
 });
 
 test("não inclui texto do chat em nenhuma requisição", async ({ page }) => {

@@ -26,6 +26,18 @@ describe("agent storage", () => {
     expect(raw.sessions[0]?.messages).toHaveLength(MAX_MESSAGES);
   });
 
+  it("atualiza a antiga trilha padrão sem sobrescrever escolhas pessoais", () => {
+    localStorage.setItem(AGENT_STORAGE_KEY, JSON.stringify({
+      version: AGENT_STORAGE_VERSION,
+      sessions: [],
+      activeSessionId: null,
+      legacyPlans: [],
+      preferences: { ...loadAgentState().preferences, youtubeUrl: "https://youtu.be/4VXErA63_eg" },
+      pomodoro: null,
+    }));
+    expect(loadAgentState().preferences.youtubeUrl).toBe(DEFAULT_YOUTUBE_URL);
+  });
+
   it("apaga o estado novo e os dados legados juntos", () => {
     localStorage.setItem(AGENT_STORAGE_KEY, "{}");
     localStorage.setItem(LEGACY_STORAGE_KEY, "{}");
@@ -37,7 +49,7 @@ describe("agent storage", () => {
 
 describe("youtube and pomodoro", () => {
   it("aceita vídeos, links curtos e playlists do YouTube", () => {
-    expect(parseYouTubeSource(DEFAULT_YOUTUBE_URL)).toMatchObject({ kind: "video", videoId: "4VXErA63_eg" });
+    expect(parseYouTubeSource(DEFAULT_YOUTUBE_URL)).toMatchObject({ kind: "video", videoId: "5tMdvZvKWYs" });
     expect(parseYouTubeSource("https://youtube.com/playlist?list=PL123456789")).toMatchObject({ kind: "playlist", playlistId: "PL123456789" });
     expect(parseYouTubeSource("https://example.com/video")).toBeNull();
     expect(youtubeSearchUrl("lo fi foco")).toContain("lo%20fi%20foco");

@@ -32,9 +32,9 @@ describe("PomoLife agent", () => {
     const { user } = renderApp();
     await user.type(screen.getByRole("textbox", { name: "Descreva sua tarefa" }), "Preciso criar 8 carrosséis");
     await user.click(screen.getByRole("button", { name: "Enviar" }));
-    const consent = screen.getByRole("dialog", { name: "Ativar o coordenador local?" });
+    const consent = screen.getByRole("dialog", { name: "Baixar a IA local?" });
     expect(consent).toBeVisible();
-    await user.click(within(consent).getByRole("button", { name: "Usar modo básico" }));
+    await user.click(within(consent).getByRole("button", { name: "Continuar no modo básico" }));
     expect(await screen.findByText(/qual entrega concreta/i)).toBeVisible();
     expect(screen.getByText("Plano básico")).toBeVisible();
   });
@@ -44,11 +44,12 @@ describe("PomoLife agent", () => {
     const composer = screen.getByRole("textbox", { name: "Descreva sua tarefa" });
     await user.type(composer, "Preciso criar 8 carrosséis");
     await user.click(screen.getByRole("button", { name: "Enviar" }));
-    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Usar modo básico" }));
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Continuar no modo básico" }));
     await screen.findByText(/qual entrega concreta/i);
     await user.type(composer, "São 8 temas, 6 páginas cada, copy pronta e prazo hoje");
     await user.click(screen.getByRole("button", { name: "Enviar" }));
-    const checkbox = await screen.findByRole("checkbox", { name: /reunir em um único lugar/i });
+    const checklistPanel = screen.getByRole("complementary", { name: /Checklist de/i });
+    const checkbox = await within(checklistPanel).findByRole("checkbox", { name: /reunir em um único lugar/i });
     await user.click(checkbox);
     expect(checkbox).toBeChecked();
     await waitFor(() => expect(loadAgentState().sessions[0]?.checklist.some((item) => item.completed)).toBe(true));
@@ -61,6 +62,23 @@ describe("PomoLife agent", () => {
     await user.click(screen.getByRole("button", { name: "Histórico" }));
     const dialog = screen.getByRole("dialog", { name: "Conversas" });
     expect(dialog.querySelectorAll(".conversation-item")).toHaveLength(2);
+  });
+
+  it("troca a checklist junto com a conversa de origem", async () => {
+    const first = createChatSession("2026-07-14T12:00:00.000Z");
+    const second = createChatSession("2026-07-14T13:00:00.000Z");
+    first.title = "Projeto Alpha";
+    second.title = "Projeto Beta";
+    first.checklist = [{ id: "alpha-task", messageId: "alpha-plan", text: "Revisar Alpha", phase: "Execução", completed: false }];
+    second.checklist = [{ id: "beta-task", messageId: "beta-plan", text: "Publicar Beta", phase: "Entrega", completed: false }];
+    saveAgentState({ version: AGENT_STORAGE_VERSION, sessions: [second, first], activeSessionId: second.id, legacyPlans: [], preferences: loadAgentState().preferences, pomodoro: null });
+    const { user } = renderApp();
+    const sidebar = screen.getByRole("complementary", { name: "Conversas criadas" });
+    const checklist = screen.getByRole("complementary", { name: /Checklist de/i });
+    expect(within(checklist).getByText("Publicar Beta")).toBeVisible();
+    await user.click(within(sidebar).getByRole("button", { name: /Projeto Alpha/i }));
+    expect(within(checklist).getByText("Revisar Alpha")).toBeVisible();
+    expect(within(checklist).queryByText("Publicar Beta")).not.toBeInTheDocument();
   });
 
   it("ignora HTML e não cria links clicáveis em mensagens salvas", () => {

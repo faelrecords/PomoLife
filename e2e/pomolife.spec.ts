@@ -13,8 +13,8 @@ async function sendBasic(page: Page, text: string) {
   const composer = page.getByRole("textbox", { name: "Descreva sua tarefa" });
   await composer.fill(text);
   await page.getByRole("button", { name: "Enviar" }).click();
-  const consent = page.getByRole("dialog", { name: "Ativar o coordenador local?" });
-  if (await consent.isVisible().catch(() => false)) await consent.getByRole("button", { name: "Usar modo básico" }).click();
+  const consent = page.getByRole("dialog", { name: "Baixar a IA local?" });
+  if (await consent.isVisible().catch(() => false)) await consent.getByRole("button", { name: "Continuar no modo básico" }).click();
 }
 
 async function openMobileHeaderIfNeeded(page: Page) {
@@ -43,7 +43,8 @@ test("faz briefing, cria checklist e salva o progresso", async ({ page }) => {
   await sendBasic(page, "Preciso criar 8 carrosséis");
   await expect(page.getByText(/qual entrega concreta/i)).toBeVisible();
   await sendBasic(page, "São 8 temas, 6 páginas, copy pronta, identidade definida e prazo hoje");
-  const checkbox = page.getByRole("checkbox", { name: /reunir em um único lugar/i });
+  const checklistPanel = page.getByRole("complementary", { name: /Checklist de/i });
+  const checkbox = checklistPanel.getByRole("checkbox", { name: /reunir em um único lugar/i });
   await expect(checkbox).toBeVisible();
   await checkbox.check();
   await expect(checkbox).toBeChecked();
@@ -82,8 +83,7 @@ test("mantém chat e player utilizáveis em viewport mobile", async ({ page }) =
   await page.goto("./");
   await expect(page.locator(".chat-shell")).toBeVisible();
   await expect(page.getByRole("textbox", { name: "Descreva sua tarefa" })).toBeVisible();
-  await page.locator(".youtube-player").scrollIntoViewIfNeeded();
-  await expect(page.locator(".youtube-player")).toBeVisible();
+  await expect(page.locator(".header-player")).toBeVisible();
   const box = await page.locator(".chat-shell").boundingBox();
   expect(box?.width ?? 0).toBeLessThanOrEqual(390);
 });

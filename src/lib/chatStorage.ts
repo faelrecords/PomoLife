@@ -2,7 +2,7 @@ import type { AgentMode, ChatMessage, ChatSession, ChecklistItem } from "../agen
 import type { PlanRecord } from "../domain";
 import { createId, createIsoNow } from "./ids";
 import { isPomodoroSession, type PomodoroSession } from "./pomodoro";
-import { DEFAULT_YOUTUBE_URL } from "./youtube";
+import { DEFAULT_YOUTUBE_URL, LEGACY_DEFAULT_YOUTUBE_URL } from "./youtube";
 
 export const AGENT_STORAGE_KEY = "pomolife:agent-state";
 export const LEGACY_STORAGE_KEY = "pomolife:state";
@@ -126,7 +126,9 @@ export function loadAgentState(storageValue = storage()): AgentPersistedState {
         preferredMode: preferences.preferredMode === "ai" || preferences.preferredMode === "basic" ? preferences.preferredMode : "ask",
         notificationsEnabled: preferences.notificationsEnabled === true,
         soundEnabled: preferences.soundEnabled === true,
-        youtubeUrl: typeof preferences.youtubeUrl === "string" ? preferences.youtubeUrl : DEFAULT_YOUTUBE_URL,
+        youtubeUrl: typeof preferences.youtubeUrl === "string" && preferences.youtubeUrl !== LEGACY_DEFAULT_YOUTUBE_URL
+          ? preferences.youtubeUrl
+          : DEFAULT_YOUTUBE_URL,
         youtubeVolume: typeof preferences.youtubeVolume === "number" ? Math.max(0, Math.min(100, preferences.youtubeVolume)) : 35,
       },
       pomodoro: isPomodoroSession(parsed.pomodoro) ? parsed.pomodoro : null,

@@ -2,7 +2,8 @@ export type YouTubeSource =
   | { kind: "video"; videoId: string; playlistId?: string; url: string }
   | { kind: "playlist"; playlistId: string; url: string };
 
-export const DEFAULT_YOUTUBE_URL = "https://youtu.be/4VXErA63_eg";
+export const DEFAULT_YOUTUBE_URL = "https://youtu.be/5tMdvZvKWYs";
+export const LEGACY_DEFAULT_YOUTUBE_URL = "https://youtu.be/4VXErA63_eg";
 const ID_PATTERN = /^[A-Za-z0-9_-]{6,64}$/;
 
 export function parseYouTubeSource(input: string): YouTubeSource | null {
@@ -33,4 +34,3 @@ export function parseYouTubeSource(input: string): YouTubeSource | null {
 export function youtubeSearchUrl(query: string): string {
   return `https://www.youtube.com/results?search_query=${encodeURIComponent(query.trim())}`;
 }
-

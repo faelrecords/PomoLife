@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import {
   createBasicAgentEngine,
+  createGroqAgentEngine,
   createWebLLMAgentEngine,
   getPomodoroPreset,
   parseAgentOutput,
@@ -51,7 +52,7 @@ import {
   type AgentPreferences,
 } from "./lib/chatStorage";
 import { createId, createIsoNow } from "./lib/ids";
-import { getLocalModel, isLocalModelId, LOCAL_MODELS } from "./lib/modelCatalog";
+import { getLocalModel, getOnlineModel, isLocalModelId, isModelId, isOnlineModelId, LOCAL_MODELS, ONLINE_MODELS } from "./lib/modelCatalog";
 import { CHAT_ATTACHMENT_ACCEPT, formatAttachmentSize, readChatAttachments } from "./lib/chatAttachments";
 import { createPomodoroSession, POMODORO_PRESETS, type PomodoroSession } from "./lib/pomodoro";
 import { BlackHoleBackdrop } from "./components/BlackHoleBackdrop";
@@ -85,7 +86,9 @@ export default function App() {
   const initial = useRef(loadAgentState()).current;
   const initialSessions = useRef(initial.sessions.length ? initial.sessions : [createChatSession()]).current;
   const [preferences, setPreferences] = useState(initial.preferences);
-  const aiEngine = useMemo(() => createWebLLMAgentEngine(preferences.selectedModelId), [preferences.selectedModelId]);
+  const aiEngine = useMemo<AgentEngine>(() => isOnlineModelId(preferences.selectedModelId)
+    ? createGroqAgentEngine(import.meta.env.VITE_GROQ_API_KEY ?? "", preferences.selectedModelId)
+    : createWebLLMAgentEngine(preferences.selectedModelId), [preferences.selectedModelId]);
   const basicEngine = useMemo(() => createBasicAgentEngine(), []);
   const aiSnapshot = useSyncExternalStore(aiEngine.subscribe, aiEngine.getSnapshot, () => INITIAL_ENGINE_SNAPSHOT);
 
@@ -115,7 +118,8 @@ export default function App() {
   const warmedEngineRef = useRef<AgentEngine | null>(null);
 
   const activeSession = sessions.find((session) => session.id === activeSessionId) ?? sessions[0];
-  const selectedModel = getLocalModel(preferences.selectedModelId);
+  const selectedOnlineModel = isOnlineModelId(preferences.selectedModelId) ? getOnlineModel(preferences.selectedModelId) : null;
+  const selectedLocalModel = getLocalModel(isLocalModelId(preferences.selectedModelId) ? preferences.selectedModelId : LOCAL_MODELS[0].id);
   const busy = isGenerating || aiSnapshot.status === "downloading" || aiSnapshot.status === "loading";
 
   useEffect(() => { sessionsRef.current = sessions; }, [sessions]);
@@ -219,10 +223,11 @@ export default function App() {
         updatedAt: createIsoNow(),
       })));
     } catch (cause) {
-      const message = cause instanceof Error ? cause.message : "A geração local foi interrompida.";
+      const message = cause instanceof Error ? cause.message : "A geração foi interrompida.";
+      const origin = engine.mode === "online" ? "pela IA online" : "localmente";
       setSessions((current) => updateSessionList(current, session.id, (item) => ({
         ...item,
-        messages: item.messages.map((entry) => entry.id === assistantId ? { ...entry, content: `Não consegui concluir esta resposta localmente. **${message}**\n\nVocê pode tentar novamente ou usar o modo básico.`, stage: "message" } : entry),
+        messages: item.messages.map((entry) => entry.id === assistantId ? { ...entry, content: `Não consegui concluir esta resposta ${origin}. **${message}**\n\nVocê pode tentar novamente, escolher um modelo local ou usar o modo básico.`, stage: "message" } : entry),
         updatedAt: createIsoNow(),
       })));
     } finally {
@@ -235,7 +240,7 @@ export default function App() {
     try {
       await aiEngine.initialize();
       setModelCached(true);
-      patchPreferences({ preferredMode: "ai" });
+      patchPreferences({ preferredMode: aiEngine.mode === "online" ? "online" : "ai" });
       setConsentOpen(false);
       setPendingText("");
       setPendingAttachments([]);
@@ -244,7 +249,7 @@ export default function App() {
       setPendingText(text);
       setPendingAttachments([...attachments]);
       setConsentOpen(true);
-      setToast("A IA local não pôde ser carregada. O modo básico continua disponível.");
+      setToast(`${selectedOnlineModel ? "A IA online" : "A IA local"} não pôde ser carregada. O modo básico continua disponível.`);
     }
   };
 
@@ -392,7 +397,7 @@ export default function App() {
               <article key={message.id} className={`chat-message message-${message.role}`}>
                 <div className="message-avatar">{message.role === "assistant" ? <Bot size={18} /> : <UserRound size={18} />}</div>
                 <div className="message-body">
-                  <div className="message-meta"><strong>{message.role === "assistant" ? "PomoLife" : "Você"}</strong><span>{message.id === "welcome" ? "agora" : formatDate(message.createdAt)}</span>{message.mode && <small>{message.mode === "ai" ? "IA local" : "Plano básico"}</small>}</div>
+                  <div className="message-meta"><strong>{message.role === "assistant" ? "PomoLife" : "Você"}</strong><span>{message.id === "welcome" ? "agora" : formatDate(message.createdAt)}</span>{message.mode && <small>{message.mode === "online" ? "IA online" : message.mode === "ai" ? "IA local" : "Plano básico"}</small>}</div>
                   {message.content ? <InteractiveMessage message={message} checklist={activeSession?.checklist ?? []} onToggle={toggleChecklist} onStart={prepareFocus} /> : <div className="typing-indicator"><span /><span /><span /><em>Pensando…</em></div>}
                   {message.attachments?.length ? <div className="message-attachments" aria-label="Arquivos anexados">{message.attachments.map((attachment) => <button key={attachment.id} type="button" onClick={() => setPreviewAttachment(attachment)} aria-label={`Visualizar arquivo ${attachment.name}`}><FileText size={14} /><span><strong>{attachment.name}</strong><small>{formatAttachmentSize(attachment.size)}</small></span></button>)}</div> : null}
                   {message.role === "assistant" && message.content && message.id !== "welcome" && <button className="message-copy" type="button" onClick={() => void copyMessage(message.content)}><Copy size={13} /> Copiar</button>}
@@ -420,7 +425,7 @@ export default function App() {
               <div className="composer-tools">
                 <input ref={fileInputRef} className="sr-only" type="file" multiple accept={CHAT_ATTACHMENT_ACCEPT} aria-label="Selecionar arquivos de texto" onChange={(event) => void addAttachments(event.target.files)} />
                 <button className="composer-attach-button" type="button" disabled={busy || attachmentBusy} aria-label="Anexar arquivos" title="Anexar arquivos de texto" onClick={() => fileInputRef.current?.click()}><Paperclip size={16} /><span>{attachmentBusy ? "Lendo…" : "Anexar"}</span></button>
-                <label className="composer-model-selector"><span className="sr-only">Modelo</span><select aria-label="Modelo de IA" value={preferences.selectedModelId} disabled={busy || isGenerating} onChange={(event) => { if (isLocalModelId(event.target.value)) patchPreferences({ selectedModelId: event.target.value, preferredMode: "ask" }); }}>{LOCAL_MODELS.map((model) => <option key={model.id} value={model.id}>{model.name} — {model.recommendedRamGb} GB RAM</option>)}</select></label>
+                <label className="composer-model-selector"><span className="sr-only">Modelo</span><select aria-label="Modelo de IA" value={preferences.selectedModelId} disabled={busy || isGenerating} onChange={(event) => { if (isModelId(event.target.value)) patchPreferences({ selectedModelId: event.target.value, preferredMode: "ask" }); }}><optgroup label="Online — sem download">{ONLINE_MODELS.map((model) => <option key={model.id} value={model.id}>{model.name} · {model.provider} · online</option>)}</optgroup><optgroup label="Local — funciona sem internet">{LOCAL_MODELS.map((model) => <option key={model.id} value={model.id}>{model.name} — {model.recommendedRamGb} GB RAM</option>)}</optgroup></select></label>
               </div>
               {isGenerating ? (
                 <button className="button button-secondary" type="button" onClick={() => { abortRef.current?.abort(); void aiEngine.cancel(); void basicEngine.cancel(); }}><Square size={14} /> Parar</button>
@@ -450,7 +455,7 @@ export default function App() {
       <footer className="site-footer"><span>© {new Date().getFullYear()} PomoLife · Fael Records</span><span>Apoio à organização; não substitui acompanhamento profissional.</span></footer>
 
       <Modal open={Boolean(previewAttachment)} labelledBy="attachment-preview-title" onClose={() => setPreviewAttachment(null)} className="compact-modal attachment-preview-modal">
-        <div className="modal-header"><div><p className="eyebrow"><FileText size={14} /> Anexo local</p><h2 id="attachment-preview-title">{previewAttachment?.name}</h2></div><button className="icon-button" type="button" aria-label="Fechar visualização" onClick={() => setPreviewAttachment(null)}><X size={18} /></button></div>
+        <div className="modal-header"><div><p className="eyebrow"><FileText size={14} /> Anexo da conversa</p><h2 id="attachment-preview-title">{previewAttachment?.name}</h2></div><button className="icon-button" type="button" aria-label="Fechar visualização" onClick={() => setPreviewAttachment(null)}><X size={18} /></button></div>
         {previewAttachment && <><div className="attachment-preview-meta"><span>{formatAttachmentSize(previewAttachment.size)}</span><span>{previewAttachment.mimeType}</span>{previewAttachment.truncated && <span>Trecho reduzido para a análise local</span>}</div><pre className="attachment-preview-content">{previewAttachment.text}</pre></>}
       </Modal>
 
@@ -458,8 +463,8 @@ export default function App() {
         <div className="modal-header"><div className="consent-icon"><Download size={22} /></div><button className="icon-button" type="button" aria-label="Fechar" disabled={busy} onClick={() => setConsentOpen(false)}><X size={18} /></button></div>
         <div className="consent-copy">
           <p className="eyebrow"><span className="signal-dot" /> Primeira mensagem</p><h2 id="consent-title">Baixar a IA local?</h2>
-          <p>O {selectedModel.name} será baixado uma única vez e executado neste dispositivo. Depois, o navegador reutiliza os arquivos salvos.</p>
-          <dl className="model-facts"><div><dt>Download</dt><dd>≈ {selectedModel.downloadMb >= 1_000 ? `${(selectedModel.downloadMb / 1_000).toFixed(2)} GB` : `${selectedModel.downloadMb} MB`}</dd></div><div><dt>Memória recomendada</dt><dd>{selectedModel.recommendedRamGb} GB RAM</dd></div><div><dt>Modelo</dt><dd>{selectedModel.name}</dd></div></dl>
+          <p>O {selectedLocalModel.name} será baixado uma única vez e executado neste dispositivo. Depois, o navegador reutiliza os arquivos salvos.</p>
+          <dl className="model-facts"><div><dt>Download</dt><dd>≈ {selectedLocalModel.downloadMb >= 1_000 ? `${(selectedLocalModel.downloadMb / 1_000).toFixed(2)} GB` : `${selectedLocalModel.downloadMb} MB`}</dd></div><div><dt>Memória recomendada</dt><dd>{selectedLocalModel.recommendedRamGb} GB RAM</dd></div><div><dt>Modelo</dt><dd>{selectedLocalModel.name}</dd></div></dl>
           {(aiSnapshot.status === "downloading" || aiSnapshot.status === "loading") && aiSnapshot.progress && <div className="download-progress"><div className="progress-label"><span>{aiSnapshot.status === "downloading" ? "Baixando modelo" : "Preparando GPU"}</span><strong>{Math.round(aiSnapshot.progress.value * 100)}%</strong></div><div className="progress-track"><span style={{ width: `${aiSnapshot.progress.value * 100}%` }} /></div><small>{aiSnapshot.progress.message}</small></div>}
           {aiSnapshot.status === "unsupported" && <p className="field-error" role="alert">Este navegador não oferece WebGPU para executar o modelo. O modo básico continua disponível.</p>}
           {aiSnapshot.error && <p className="field-error" role="alert">{aiSnapshot.error.message}</p>}
@@ -471,9 +476,9 @@ export default function App() {
       </Modal>
 
       <Modal open={settingsOpen} labelledBy="settings-title" onClose={() => setSettingsOpen(false)} className="side-modal settings-modal">
-        <div className="modal-header"><div><p className="eyebrow"><Settings size={14} /> Controle local</p><h2 id="settings-title">Configurações</h2></div><button className="icon-button" type="button" aria-label="Fechar" onClick={() => setSettingsOpen(false)}><X size={18} /></button></div>
+        <div className="modal-header"><div><p className="eyebrow"><Settings size={14} /> Preferências</p><h2 id="settings-title">Configurações</h2></div><button className="icon-button" type="button" aria-label="Fechar" onClick={() => setSettingsOpen(false)}><X size={18} /></button></div>
         <section className="settings-section"><div className="settings-heading"><strong>Pomodoro</strong><p>Alertas funcionam enquanto o site estiver aberto.</p></div><label className="toggle-row"><span><strong>Notificações</strong><small>Check-in no meio e no fim do bloco.</small></span><input type="checkbox" checked={preferences.notificationsEnabled} onChange={(event) => patchPreferences({ notificationsEnabled: event.target.checked })} /><span className="toggle-track"><span /></span></label><label className="toggle-row"><span><strong>Som discreto</strong><small>Um sinal curto nos check-ins.</small></span><input type="checkbox" checked={preferences.soundEnabled} onChange={(event) => patchPreferences({ soundEnabled: event.target.checked })} /><span className="toggle-track"><span /></span></label></section>
-        <section className="settings-section"><div className="settings-heading"><strong>Modelo local selecionado</strong><p>{selectedModel.name} · cada modelo é salvo apenas uma vez por navegador e domínio.</p></div><span className="cache-status"><span className="signal-dot" /> {modelCached === null ? "Verificando…" : modelCached === true ? "Salvo neste dispositivo" : modelCached === "error" ? "Não foi possível verificar" : "Ainda não baixado"}</span>{modelCached === true && <button className="button button-secondary full-button" type="button" disabled={cacheBusy} onClick={() => void clearModel()}>{cacheBusy ? "Removendo…" : "Remover modelo selecionado"}</button>}</section>
+        <section className="settings-section">{selectedOnlineModel ? <><div className="settings-heading"><strong>Modelo online selecionado</strong><p>{selectedOnlineModel.name} · processado pela {selectedOnlineModel.provider}, sem download.</p></div><span className="cache-status"><span className="signal-dot" /> Disponível online</span></> : <><div className="settings-heading"><strong>Modelo local selecionado</strong><p>{selectedLocalModel.name} · cada modelo é salvo apenas uma vez por navegador e domínio.</p></div><span className="cache-status"><span className="signal-dot" /> {modelCached === null ? "Verificando…" : modelCached === true ? "Salvo neste dispositivo" : modelCached === "error" ? "Não foi possível verificar" : "Ainda não baixado"}</span>{modelCached === true && <button className="button button-secondary full-button" type="button" disabled={cacheBusy} onClick={() => void clearModel()}>{cacheBusy ? "Removendo…" : "Remover modelo selecionado"}</button>}</>}</section>
         <section className="settings-section danger-section"><div className="settings-heading"><strong>Dados deste navegador</strong><p>Apaga conversas, checklists, preferências, planos antigos e timer. O modelo é removido separadamente.</p></div><button className="button button-danger full-button" type="button" onClick={() => { if (window.confirm("Apagar todos os dados locais do PomoLife?")) { clearAgentData(); const replacement = createChatSession(); setSessions([replacement]); setActiveSessionId(replacement.id); setLegacyPlans([]); setPreferences({ ...DEFAULT_AGENT_PREFERENCES }); setPomodoro(null); setSettingsOpen(false); setToast("Dados locais apagados."); } }}><Trash2 size={15} /> Apagar meus dados</button></section>
       </Modal>
 

@@ -1,6 +1,6 @@
 import type { PlannerEngineIssue, PlannerEngineSnapshot } from "../engine";
 
-export type AgentMode = "ai" | "basic";
+export type AgentMode = "ai" | "online" | "basic";
 export type AgentRole = "user" | "assistant";
 export type AgentStage = "briefing" | "plan" | "message";
 

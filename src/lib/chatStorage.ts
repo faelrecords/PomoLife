@@ -3,7 +3,7 @@ import type { PlanRecord } from "../domain";
 import { createId, createIsoNow } from "./ids";
 import { isPomodoroSession, type PomodoroSession } from "./pomodoro";
 import { DEFAULT_YOUTUBE_URL, LEGACY_DEFAULT_YOUTUBE_URL } from "./youtube";
-import { DEFAULT_LOCAL_MODEL_ID, isLocalModelId, type LocalModelId } from "./modelCatalog";
+import { DEFAULT_MODEL_ID, isModelId, type ModelId } from "./modelCatalog";
 import { MAX_ATTACHMENT_BYTES, MAX_ATTACHMENT_CHARACTERS, MAX_CHAT_ATTACHMENTS, MAX_TOTAL_ATTACHMENT_CHARACTERS } from "./chatAttachments";
 
 export const AGENT_STORAGE_KEY = "pomolife:agent-state";
@@ -20,7 +20,7 @@ export interface AgentPreferences {
   soundEnabled: boolean;
   youtubeUrl: string;
   youtubeVolume: number;
-  selectedModelId: LocalModelId;
+  selectedModelId: ModelId;
 }
 
 export interface AgentPersistedState {
@@ -38,7 +38,7 @@ export const DEFAULT_AGENT_PREFERENCES: AgentPreferences = {
   soundEnabled: false,
   youtubeUrl: DEFAULT_YOUTUBE_URL,
   youtubeVolume: 35,
-  selectedModelId: DEFAULT_LOCAL_MODEL_ID,
+  selectedModelId: DEFAULT_MODEL_ID,
 };
 
 function storage(): Storage | null {
@@ -114,7 +114,7 @@ function sanitizeMessage(value: unknown): ChatMessage | null {
     role: value.role,
     content: value.content,
     createdAt: value.createdAt,
-    mode: value.mode === "ai" || value.mode === "basic" ? value.mode : undefined,
+    mode: value.mode === "ai" || value.mode === "online" || value.mode === "basic" ? value.mode : undefined,
     stage: value.stage === "briefing" || value.stage === "plan" || value.stage === "message" ? value.stage : undefined,
     attachments: sanitizeAttachments(value.attachments),
   };
@@ -160,14 +160,14 @@ export function loadAgentState(storageValue = storage()): AgentPersistedState {
       activeSessionId: typeof parsed.activeSessionId === "string" && sessions.some((session) => session.id === parsed.activeSessionId) ? parsed.activeSessionId : sessions[0]?.id ?? null,
       legacyPlans: Array.isArray(parsed.legacyPlans) ? parsed.legacyPlans as PlanRecord[] : fallback.legacyPlans,
       preferences: {
-        preferredMode: preferences.preferredMode === "ai" || preferences.preferredMode === "basic" ? preferences.preferredMode : "ask",
+        preferredMode: preferences.preferredMode === "ai" || preferences.preferredMode === "online" || preferences.preferredMode === "basic" ? preferences.preferredMode : "ask",
         notificationsEnabled: preferences.notificationsEnabled === true,
         soundEnabled: preferences.soundEnabled === true,
         youtubeUrl: typeof preferences.youtubeUrl === "string" && preferences.youtubeUrl !== LEGACY_DEFAULT_YOUTUBE_URL
           ? preferences.youtubeUrl
           : DEFAULT_YOUTUBE_URL,
         youtubeVolume: typeof preferences.youtubeVolume === "number" ? Math.max(0, Math.min(100, preferences.youtubeVolume)) : 35,
-        selectedModelId: isLocalModelId(preferences.selectedModelId) ? preferences.selectedModelId : DEFAULT_LOCAL_MODEL_ID,
+        selectedModelId: isModelId(preferences.selectedModelId) ? preferences.selectedModelId : DEFAULT_MODEL_ID,
       },
       pomodoro: isPomodoroSession(parsed.pomodoro) ? parsed.pomodoro : null,
     };

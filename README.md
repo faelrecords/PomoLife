@@ -22,11 +22,12 @@ npm run check
 npm run test:e2e
 ```
 
-## Privacidade e IA local
+## IA online, privacidade e modo local
 
-- Não há backend, conta, chave de API ou analytics.
-- O texto das conversas e dos anexos é processado no dispositivo.
-- Arquivos de texto, Markdown, CSV, JSON e código podem ser anexados e analisados localmente.
+- Não há conta nem analytics no PomoLife.
+- O Qwen3 32B da Groq funciona online e não exige download; ao selecioná-lo, conversas e anexos são enviados à Groq para gerar a resposta.
+- Os modelos WebLLM continuam disponíveis como alternativa local e processam texto e anexos no próprio dispositivo.
+- Arquivos de texto, Markdown, CSV, JSON e código são extraídos e armazenados localmente no navegador.
 - O seletor oferece modelos locais para diferentes capacidades de memória; cada modelo é baixado somente quando escolhido.
 - O modelo fica no cache do navegador e pode ser removido nas configurações.
 - Sem WebGPU, o PomoLife continua funcionando no modo básico.
